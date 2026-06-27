@@ -1,4 +1,5 @@
 const builtin = @import("builtin");
+const std = @import("std");
 const bootstrap = @import("bootstrap.zig");
 
 const DLL_PROCESS_ATTACH: u32 = 1;
@@ -16,7 +17,7 @@ pub export fn DllMain(instance: ?*anyopaque, reason: u32, reserved: ?*anyopaque)
 pub export fn JNI_OnLoad(vm: ?*anyopaque, reserved: ?*anyopaque) callconv(.c) c_int {
     _ = vm;
     _ = reserved;
-    if (builtin.os.tag == .android) {
+    if (isAndroid()) {
         _ = bootstrap.ftk_bootstrap_run_once();
     }
     return JNI_VERSION_1_6;
@@ -28,3 +29,6 @@ pub export fn ftk_platform_constructor_entry() callconv(.c) void {
     }
 }
 
+fn isAndroid() bool {
+    return comptime std.mem.eql(u8, @tagName(builtin.target.abi), "android");
+}

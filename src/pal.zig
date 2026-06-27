@@ -2,12 +2,14 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 pub fn privateRoot(allocator: std.mem.Allocator) ![]u8 {
-    return switch (builtin.os.tag) {
-        .windows => windowsRoot(allocator),
-        .android => androidRoot(allocator),
-        .ios, .macos => appleRoot(allocator),
-        else => posixRoot(allocator),
-    };
+    if (builtin.os.tag == .windows) return windowsRoot(allocator);
+    if (isAndroid()) return androidRoot(allocator);
+    if (builtin.os.tag == .ios or builtin.os.tag == .macos) return appleRoot(allocator);
+    return posixRoot(allocator);
+}
+
+fn isAndroid() bool {
+    return comptime std.mem.eql(u8, @tagName(builtin.target.abi), "android");
 }
 
 fn envOrNull(allocator: std.mem.Allocator, name: []const u8) ?[]u8 {
@@ -57,4 +59,3 @@ test "private root resolves" {
     defer std.testing.allocator.free(root);
     try std.testing.expect(root.len > 0);
 }
-

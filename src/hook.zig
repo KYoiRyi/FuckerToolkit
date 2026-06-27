@@ -1,4 +1,5 @@
 const builtin = @import("builtin");
+const std = @import("std");
 
 pub const Status = enum(c_int) {
     ok = 0,
@@ -21,23 +22,23 @@ pub export fn ftk_hook_attach(hook: NativeHook) callconv(.c) Status {
     if (hook.detour == null) return .invalid_detour;
     if (hook.original == null) return .invalid_original;
 
-    return switch (builtin.os.tag) {
-        .windows => windowsAttach(hook),
-        .android => androidAttach(hook),
-        .ios, .macos => appleAttach(hook),
-        else => .backend_error,
-    };
+    if (builtin.os.tag == .windows) return windowsAttach(hook);
+    if (isAndroid()) return androidAttach(hook);
+    if (builtin.os.tag == .ios or builtin.os.tag == .macos) return appleAttach(hook);
+    return .backend_error;
 }
 
 pub export fn ftk_hook_detach(target: ?*anyopaque) callconv(.c) Status {
     if (target == null) return .invalid_target;
 
-    return switch (builtin.os.tag) {
-        .windows => windowsDetach(target.?),
-        .android => androidDetach(target.?),
-        .ios, .macos => appleDetach(target.?),
-        else => .backend_error,
-    };
+    if (builtin.os.tag == .windows) return windowsDetach(target.?);
+    if (isAndroid()) return androidDetach(target.?);
+    if (builtin.os.tag == .ios or builtin.os.tag == .macos) return appleDetach(target.?);
+    return .backend_error;
+}
+
+fn isAndroid() bool {
+    return comptime std.mem.eql(u8, @tagName(builtin.target.abi), "android");
 }
 
 const MH_OK: c_int = 0;
