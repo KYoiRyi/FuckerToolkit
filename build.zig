@@ -111,7 +111,7 @@ fn addLuaSources(
             flags.appendSlice(&.{ "-isystem", path }) catch @panic("out of memory");
         }
     } else if (isAndroid(target)) {
-        flags.appendSlice(&.{ "-DLUA_USE_LINUX", "-D__ANDROID_API__=35", "-DANDROID" }) catch @panic("out of memory");
+        flags.appendSlice(&.{ "-DLUA_USE_LINUX", "-DANDROID" }) catch @panic("out of memory");
         if (android_sysroot) |path| {
             flags.appendSlice(&.{
                 b.fmt("--sysroot={s}", .{path}),
@@ -228,7 +228,6 @@ fn addShadowHook(b: *std.Build, lib: *std.Build.Step.Compile, root: []const u8, 
             b.pathJoin(&.{ path, "usr", "include" }),
             "-isystem",
             b.pathJoin(&.{ path, "usr", "include", "aarch64-linux-android" }),
-            "-D__ANDROID_API__=35",
             "-DANDROID",
         }
     else
@@ -237,7 +236,6 @@ fn addShadowHook(b: *std.Build, lib: *std.Build.Step.Compile, root: []const u8, 
             "-ffunction-sections",
             "-fdata-sections",
             "-Wno-everything",
-            "-D__ANDROID_API__=35",
             "-DANDROID",
         };
 
