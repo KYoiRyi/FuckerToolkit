@@ -23,7 +23,7 @@ jobs:
             backend: minhook
           - name: Android aarch64
             os: ubuntu-24.04
-            target: aarch64-linux-android35
+            target: aarch64-linux-android.35
             artifact: ftk-android-aarch64
             backend: shadowhook
           - name: iOS aarch64
