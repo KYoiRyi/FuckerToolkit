@@ -28,6 +28,7 @@ pub fn build(b: *std.Build) void {
             lib.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ path, "usr", "lib" }) });
             lib.addFrameworkPath(.{ .cwd_relative = b.pathJoin(&.{ path, "System", "Library", "Frameworks" }) });
         }
+        lib.linkSystemLibrary("objc");
     }
     addLuaSources(
         b,

@@ -71,7 +71,9 @@ jobs:
             shadowhook)
               NDK_ROOT="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}}"
               test -n "$NDK_ROOT"
-              zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe -Dlua-root=deps/lua -Dshadowhook-root=deps/shadowhook -Dandroid-sysroot="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot" --summary all
+              ANDROID_SYSROOT="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+              printf 'include_dir=%s/usr/include\nsys_include_dir=%s/usr/include\ncrt_dir=%s/usr/lib/aarch64-linux-android/35\nmsvc_lib_dir=\nkernel32_lib_dir=\n' "$ANDROID_SYSROOT" "$ANDROID_SYSROOT" "$ANDROID_SYSROOT" > android-libc.txt
+              zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe -Dlua-root=deps/lua -Dshadowhook-root=deps/shadowhook -Dandroid-sysroot="$ANDROID_SYSROOT" --libc android-libc.txt --summary all
               ;;
             tinyhook)
               IOS_SYSROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
