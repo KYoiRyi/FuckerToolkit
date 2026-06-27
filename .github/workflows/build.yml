@@ -88,10 +88,26 @@ jobs:
         shell: bash
         run: zig build test -Dlua-root=deps/lua -Dminhook-root=deps/minhook --summary all
 
+      - name: Stage artifact
+        shell: bash
+        run: |
+          rm -rf dist
+          mkdir -p dist
+          case "${{ matrix.backend }}" in
+            minhook)
+              cp zig-out/bin/ftk.dll dist/ftk.dll
+              ;;
+            shadowhook)
+              cp zig-out/lib/libftk.so dist/libftk.so
+              ;;
+            tinyhook)
+              cp zig-out/lib/libftk.dylib dist/libftk.dylib
+              ;;
+          esac
+          test "$(find dist -type f | wc -l | tr -d ' ')" = "1"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: |
-            zig-out/bin/*
-            zig-out/lib/*
+          path: dist/*
