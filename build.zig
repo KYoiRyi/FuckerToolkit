@@ -18,7 +18,15 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     lib.linkLibC();
-    addLuaSources(b, lib, target, lua_root orelse @panic("Builds require -Dlua-root=/path/to/lua"));
+    addLuaSources(
+        b,
+        lib,
+        target,
+        lua_root orelse @panic("Builds require -Dlua-root=/path/to/lua"),
+        android_sysroot,
+        apple_sysroot,
+        apple_toolchain_include,
+    );
     addHookBackendSources(b, lib, target, minhook_root, shadowhook_root, tinyhook_root, android_sysroot, apple_sysroot, apple_toolchain_include);
     b.installArtifact(lib);
 
@@ -36,7 +44,15 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_tests.step);
 }
 
-fn addLuaSources(b: *std.Build, lib: *std.Build.Step.Compile, target: std.Build.ResolvedTarget, root: []const u8) void {
+fn addLuaSources(
+    b: *std.Build,
+    lib: *std.Build.Step.Compile,
+    target: std.Build.ResolvedTarget,
+    root: []const u8,
+    android_sysroot: ?[]const u8,
+    apple_sysroot: ?[]const u8,
+    apple_toolchain_include: ?[]const u8,
+) void {
     lib.addIncludePath(.{ .cwd_relative = root });
 
     const files = [_][]const u8{
@@ -74,19 +90,44 @@ fn addLuaSources(b: *std.Build, lib: *std.Build.Step.Compile, target: std.Build.
         b.pathJoin(&.{ root, "lzio.c" }),
     };
 
-    const platform = if (target.result.os.tag == .windows)
-        "-DLUA_USE_WINDOWS"
-    else if (target.result.os.tag == .ios or target.result.os.tag == .macos)
-        "-DLUA_USE_MACOSX"
-    else
-        "-DLUA_USE_LINUX";
+    var flags = std.ArrayList([]const u8).init(b.allocator);
+    flags.append("-std=c99") catch @panic("out of memory");
+
+    if (target.result.os.tag == .windows) {
+        flags.append("-DLUA_USE_WINDOWS") catch @panic("out of memory");
+    } else if (target.result.os.tag == .ios or target.result.os.tag == .macos) {
+        flags.append("-DLUA_USE_MACOSX") catch @panic("out of memory");
+        if (apple_sysroot) |path| {
+            flags.appendSlice(&.{
+                "-isysroot",
+                path,
+                "-isystem",
+                b.pathJoin(&.{ path, "usr", "include" }),
+                "-iframework",
+                b.pathJoin(&.{ path, "System", "Library", "Frameworks" }),
+            }) catch @panic("out of memory");
+        }
+        if (apple_toolchain_include) |path| {
+            flags.appendSlice(&.{ "-isystem", path }) catch @panic("out of memory");
+        }
+    } else if (isAndroid(target)) {
+        flags.appendSlice(&.{ "-DLUA_USE_LINUX", "-D__ANDROID_API__=23", "-DANDROID" }) catch @panic("out of memory");
+        if (android_sysroot) |path| {
+            flags.appendSlice(&.{
+                b.fmt("--sysroot={s}", .{path}),
+                "-isystem",
+                b.pathJoin(&.{ path, "usr", "include" }),
+                "-isystem",
+                b.pathJoin(&.{ path, "usr", "include", "aarch64-linux-android" }),
+            }) catch @panic("out of memory");
+        }
+    } else {
+        flags.append("-DLUA_USE_LINUX") catch @panic("out of memory");
+    }
 
     lib.addCSourceFiles(.{
         .files = &files,
-        .flags = &.{
-            "-std=c99",
-            platform,
-        },
+        .flags = flags.items,
     });
 }
 
