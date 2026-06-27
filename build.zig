@@ -19,7 +19,15 @@ pub fn build(b: *std.Build) void {
     });
     lib.linkLibC();
     if (isAndroid(target)) {
+        if (android_sysroot) |path| {
+            lib.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ path, "usr", "lib", "aarch64-linux-android", "35" }) });
+        }
         lib.linkSystemLibrary("log");
+    } else if (target.result.os.tag == .ios or target.result.os.tag == .macos) {
+        if (apple_sysroot) |path| {
+            lib.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ path, "usr", "lib" }) });
+            lib.addFrameworkPath(.{ .cwd_relative = b.pathJoin(&.{ path, "System", "Library", "Frameworks" }) });
+        }
     }
     addLuaSources(
         b,
