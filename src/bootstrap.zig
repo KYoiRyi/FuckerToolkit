@@ -39,7 +39,7 @@ pub fn runOnce(allocator: std.mem.Allocator, options: Options) !void {
     try log.write(.info, "local://init.lua finished");
 }
 
-export fn ftk_bootstrap_run_once() callconv(.c) c_int {
+pub export fn ftk_bootstrap_run_once() callconv(.c) c_int {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
