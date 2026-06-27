@@ -1,3 +1,5 @@
+const builtin = @import("builtin");
+
 pub const bootstrap = @import("bootstrap.zig");
 pub const entry = @import("entry.zig");
 pub const hook = @import("hook.zig");
@@ -8,7 +10,9 @@ pub const pal = @import("pal.zig");
 pub const vfs = @import("vfs.zig");
 
 comptime {
-    _ = entry.ftk_platform_constructor_entry;
+    if (!builtin.is_test) {
+        _ = entry.ftk_platform_constructor_entry;
+    }
 }
 
 test {

@@ -18,7 +18,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     lib.linkLibC();
-    if (isAndroid(target)) {
+    if (target.result.os.tag == .windows) {
+        lib.addCSourceFile(.{
+            .file = b.path("src/windows_entry.c"),
+            .flags = &.{ "-std=c11", "-DWIN32_LEAN_AND_MEAN" },
+        });
+    } else if (isAndroid(target)) {
         if (android_sysroot) |path| {
             lib.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ path, "usr", "lib", "aarch64-linux-android", "35" }) });
         }
