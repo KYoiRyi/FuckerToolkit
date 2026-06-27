@@ -18,7 +18,6 @@ pub fn build(b: *std.Build) void {
 
     const tests = b.addTest(.{
         .root_source_file = b.path("src/ftk.zig"),
-        .target = b.host,
         .optimize = optimize,
     });
     tests.linkLibC();
@@ -27,4 +26,3 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run host unit tests");
     test_step.dependOn(&run_tests.step);
 }
-
