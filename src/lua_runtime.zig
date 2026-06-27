@@ -60,8 +60,6 @@ pub const Context = struct {
     }
 
     fn registerToolkit(self: *Context) void {
-        _ = self;
-
         lua_createtable(self.state, 0, 1);
         lua_createtable(self.state, 0, 3);
 
@@ -83,7 +81,7 @@ pub const Context = struct {
         var len: usize = 0;
         const raw = lua_tolstring(self.state, -1, &len) orelse return;
         const message = raw[0..len];
-        var composed = try std.fmt.allocPrint(self.allocator, "lua {s} error: {s}", .{ phase, message });
+        const composed = try std.fmt.allocPrint(self.allocator, "lua {s} error: {s}", .{ phase, message });
         defer self.allocator.free(composed);
         var log = logger.Logger{ .allocator = self.allocator, .root = self.root };
         try log.write(.err, composed);
@@ -129,4 +127,3 @@ fn luaLogError(L: ?*LuaState) callconv(.c) c_int {
 fn luaPrint(L: ?*LuaState) callconv(.c) c_int {
     return writeLuaMessage(L, .info, 1);
 }
-
