@@ -1,45 +1,31 @@
 # FuckerToolkit
 
-Local C++17 toolkit skeleton for a Lua-driven, cross-platform runtime.
+Local Zig toolkit skeleton for a cross-platform runtime.
 
-This repository currently implements the safe project foundation:
+This repository currently implements:
 
 - platform entry points for Windows, Android, Apple, and generic POSIX
 - PAL path resolution and page-protection helpers
 - VFS sandboxing under a private local root
-- Lua context abstraction with optional system Lua 5.4 integration
-- high-level API bridge shape
-- hook-engine interface backed by MinHook on Windows, ShadowHook on Android, and tinyhook on Apple platforms
+- hook-engine ABI bindings for MinHook on Windows, ShadowHook on Android, and tinyhook on Apple platforms
 
 Stealth, anti-detection, and unauthorized third-party process tampering are intentionally not part of this repository. The hook layer is a native in-process detour adapter around established platform libraries.
 
 ## Build
 
-```powershell
-cmake -S . -B build
-cmake --build build
-.\build\Debug\ftk_smoke_test.exe
+```bash
+zig build -Dtarget=x86_64-windows-msvc -Doptimize=ReleaseSafe
+zig build -Dtarget=aarch64-linux-android -Doptimize=ReleaseSafe
+zig build -Dtarget=aarch64-ios -Doptimize=ReleaseSafe
 ```
 
-On Windows, MinHook is fetched automatically by default. To use a packaged MinHook instead:
-
-```powershell
-cmake -S . -B build -DFTK_FETCH_MINHOOK=OFF -Dminhook_DIR=<path-to-minhook-config>
-```
-
-On Android, add ShadowHook through the official Prefab package and build with an Android toolchain so `find_package(shadowhook REQUIRED CONFIG)` resolves.
-
-On Apple/iOS, build or install tinyhook first and pass:
+Run host tests:
 
 ```bash
-cmake -S . -B build -DFTK_TINYHOOK_ROOT=/path/to/tinyhook
+zig build test
 ```
 
-Enable Lua only when Lua 5.4 development files are installed:
-
-```powershell
-cmake -S . -B build -DFTK_WITH_LUA=ON
-```
+The default artifact is a static library under `zig-out/lib`. The library binds to the real platform hook backends by C ABI; final application linkage must provide MinHook, ShadowHook, or tinyhook on the corresponding platform.
 
 ## Script Location
 
@@ -50,3 +36,10 @@ local://init.lua
 ```
 
 The VFS rejects path traversal and keeps file access under the resolved private root.
+
+## Exported C ABI
+
+- `ftk_bootstrap_run_once`
+- `ftk_hook_attach`
+- `ftk_hook_detach`
+- `ftk_memory_protect`

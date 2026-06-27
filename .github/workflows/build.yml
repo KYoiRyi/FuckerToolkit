@@ -8,20 +8,45 @@ on:
   workflow_dispatch:
 
 jobs:
-  windows:
-    name: Windows MinHook
-    runs-on: windows-2022
+  compile:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x86_64
+            os: windows-2022
+            target: x86_64-windows-msvc
+            artifact: ftk-windows-x86_64
+          - name: Android aarch64
+            os: ubuntu-24.04
+            target: aarch64-linux-android
+            artifact: ftk-android-aarch64
+          - name: iOS aarch64
+            os: macos-15
+            target: aarch64-ios
+            artifact: ftk-ios-aarch64
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
 
-      - name: Build
-        run: cmake --build build --config Debug --parallel
+      - name: Compile
+        run: zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe --summary all
 
-      - name: Smoke test
-        run: .\build\Debug\ftk_smoke_test.exe
+      - name: Host tests
+        if: matrix.os == 'windows-2022'
+        run: zig build test --summary all
 
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: zig-out/lib/*
