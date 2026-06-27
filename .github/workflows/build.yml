@@ -90,4 +90,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: zig-out/lib/*
+          path: |
+            zig-out/bin/*
+            zig-out/lib/*

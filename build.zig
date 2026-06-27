@@ -11,13 +11,16 @@ pub fn build(b: *std.Build) void {
     const apple_sysroot = b.option([]const u8, "apple-sysroot", "Path to the Apple SDK sysroot");
     const apple_toolchain_include = b.option([]const u8, "apple-toolchain-include", "Path to the Apple toolchain include directory");
 
-    const lib = b.addStaticLibrary(.{
+    const lib = b.addSharedLibrary(.{
         .name = "ftk",
         .root_source_file = b.path("src/ftk.zig"),
         .target = target,
         .optimize = optimize,
     });
     lib.linkLibC();
+    if (isAndroid(target)) {
+        lib.linkSystemLibrary("log");
+    }
     addLuaSources(
         b,
         lib,
