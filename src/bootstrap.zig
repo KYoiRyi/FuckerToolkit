@@ -1,6 +1,8 @@
 const std = @import("std");
 const vfs = @import("vfs.zig");
 const pal = @import("pal.zig");
+const logger = @import("logger.zig");
+const lua = @import("lua_runtime.zig");
 
 pub const Options = extern struct {
     keep_runtime_alive: bool = false,
@@ -15,17 +17,26 @@ pub fn runOnce(allocator: std.mem.Allocator, options: Options) !void {
     var fs = try vfs.VirtualFileSystem.init(allocator, root);
     defer fs.deinit();
 
+    var log = logger.Logger{ .allocator = allocator, .root = fs.root };
+    try log.write(.info, "bootstrap started");
+
     const init_path = try fs.resolveLocalUri("local://init.lua");
     defer allocator.free(init_path);
 
     std.fs.accessAbsolute(init_path, .{}) catch |err| switch (err) {
-        error.FileNotFound => return,
+        error.FileNotFound => {
+            try log.write(.info, "local://init.lua not found; bootstrap stopped");
+            return;
+        },
         else => return err,
     };
 
-    // Lua embedding is intentionally a separate backend concern in this Zig
-    // rewrite; this bootstrap verifies the private script path and leaves
-    // execution to a caller-provided runtime binding.
+    var context = try lua.Context.init(allocator, fs.root);
+    defer context.deinit();
+
+    try log.write(.info, "executing local://init.lua");
+    try context.executeFile(init_path);
+    try log.write(.info, "local://init.lua finished");
 }
 
 export fn ftk_bootstrap_run_once() callconv(.c) c_int {
@@ -35,4 +46,3 @@ export fn ftk_bootstrap_run_once() callconv(.c) c_int {
     runOnce(gpa.allocator(), .{}) catch return -1;
     return 0;
 }
-

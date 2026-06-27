@@ -41,6 +41,11 @@ jobs:
         with:
           version: 0.14.1
 
+      - name: Fetch Lua
+        shell: bash
+        run: |
+          git clone --depth 1 --branch v5.4.8 https://github.com/lua/lua.git deps/lua
+
       - name: Fetch MinHook
         if: matrix.backend == 'minhook'
         shell: bash
@@ -61,25 +66,25 @@ jobs:
         run: |
           case "${{ matrix.backend }}" in
             minhook)
-              zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe -Dminhook-root=deps/minhook --summary all
+              zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe -Dlua-root=deps/lua -Dminhook-root=deps/minhook --summary all
               ;;
             shadowhook)
               NDK_ROOT="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}}"
               test -n "$NDK_ROOT"
-              zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe -Dshadowhook-root=deps/shadowhook -Dandroid-sysroot="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot" --summary all
+              zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe -Dlua-root=deps/lua -Dshadowhook-root=deps/shadowhook -Dandroid-sysroot="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot" --summary all
               ;;
             tinyhook)
               IOS_SYSROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
               CLANG_PATH="$(xcrun --toolchain XcodeDefault --find clang)"
               TOOLCHAIN_INCLUDE="$(cd "$(dirname "$CLANG_PATH")/.." && pwd)/include"
-              zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe -Dtinyhook-root=deps/tinyhook -Dapple-sysroot="$IOS_SYSROOT" -Dapple-toolchain-include="$TOOLCHAIN_INCLUDE" --summary all
+              zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe -Dlua-root=deps/lua -Dtinyhook-root=deps/tinyhook -Dapple-sysroot="$IOS_SYSROOT" -Dapple-toolchain-include="$TOOLCHAIN_INCLUDE" --summary all
               ;;
           esac
 
       - name: Host tests
         if: matrix.os == 'windows-2022'
         shell: bash
-        run: zig build test -Dminhook-root=deps/minhook --summary all
+        run: zig build test -Dlua-root=deps/lua -Dminhook-root=deps/minhook --summary all
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

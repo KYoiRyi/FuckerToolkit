@@ -6,6 +6,7 @@ pub fn build(b: *std.Build) void {
     const minhook_root = b.option([]const u8, "minhook-root", "Path to a MinHook source checkout");
     const shadowhook_root = b.option([]const u8, "shadowhook-root", "Path to an android-inline-hook source checkout");
     const tinyhook_root = b.option([]const u8, "tinyhook-root", "Path to a tinyhook source checkout");
+    const lua_root = b.option([]const u8, "lua-root", "Path to a Lua 5.4 source checkout");
     const android_sysroot = b.option([]const u8, "android-sysroot", "Path to the Android NDK sysroot");
     const apple_sysroot = b.option([]const u8, "apple-sysroot", "Path to the Apple SDK sysroot");
     const apple_toolchain_include = b.option([]const u8, "apple-toolchain-include", "Path to the Apple toolchain include directory");
@@ -17,6 +18,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     lib.linkLibC();
+    addLuaSources(b, lib, target, lua_root orelse @panic("Builds require -Dlua-root=/path/to/lua"));
     addHookBackendSources(b, lib, target, minhook_root, shadowhook_root, tinyhook_root, android_sysroot, apple_sysroot, apple_toolchain_include);
     b.installArtifact(lib);
 
@@ -32,6 +34,60 @@ pub fn build(b: *std.Build) void {
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run host unit tests");
     test_step.dependOn(&run_tests.step);
+}
+
+fn addLuaSources(b: *std.Build, lib: *std.Build.Step.Compile, target: std.Build.ResolvedTarget, root: []const u8) void {
+    lib.addIncludePath(.{ .cwd_relative = root });
+
+    const files = [_][]const u8{
+        b.pathJoin(&.{ root, "lapi.c" }),
+        b.pathJoin(&.{ root, "lauxlib.c" }),
+        b.pathJoin(&.{ root, "lbaselib.c" }),
+        b.pathJoin(&.{ root, "lcode.c" }),
+        b.pathJoin(&.{ root, "lcorolib.c" }),
+        b.pathJoin(&.{ root, "lctype.c" }),
+        b.pathJoin(&.{ root, "ldblib.c" }),
+        b.pathJoin(&.{ root, "ldebug.c" }),
+        b.pathJoin(&.{ root, "ldo.c" }),
+        b.pathJoin(&.{ root, "ldump.c" }),
+        b.pathJoin(&.{ root, "lfunc.c" }),
+        b.pathJoin(&.{ root, "lgc.c" }),
+        b.pathJoin(&.{ root, "linit.c" }),
+        b.pathJoin(&.{ root, "liolib.c" }),
+        b.pathJoin(&.{ root, "llex.c" }),
+        b.pathJoin(&.{ root, "lmathlib.c" }),
+        b.pathJoin(&.{ root, "lmem.c" }),
+        b.pathJoin(&.{ root, "loadlib.c" }),
+        b.pathJoin(&.{ root, "lobject.c" }),
+        b.pathJoin(&.{ root, "lopcodes.c" }),
+        b.pathJoin(&.{ root, "loslib.c" }),
+        b.pathJoin(&.{ root, "lparser.c" }),
+        b.pathJoin(&.{ root, "lstate.c" }),
+        b.pathJoin(&.{ root, "lstring.c" }),
+        b.pathJoin(&.{ root, "lstrlib.c" }),
+        b.pathJoin(&.{ root, "ltable.c" }),
+        b.pathJoin(&.{ root, "ltablib.c" }),
+        b.pathJoin(&.{ root, "ltm.c" }),
+        b.pathJoin(&.{ root, "lundump.c" }),
+        b.pathJoin(&.{ root, "lutf8lib.c" }),
+        b.pathJoin(&.{ root, "lvm.c" }),
+        b.pathJoin(&.{ root, "lzio.c" }),
+    };
+
+    const platform = if (target.result.os.tag == .windows)
+        "-DLUA_USE_WINDOWS"
+    else if (target.result.os.tag == .ios or target.result.os.tag == .macos)
+        "-DLUA_USE_MACOSX"
+    else
+        "-DLUA_USE_LINUX";
+
+    lib.addCSourceFiles(.{
+        .files = &files,
+        .flags = &.{
+            "-std=c99",
+            platform,
+        },
+    });
 }
 
 fn addHookBackendSources(

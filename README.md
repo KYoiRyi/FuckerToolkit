@@ -7,6 +7,8 @@ This repository currently implements:
 - platform entry points for Windows, Android, Apple, and generic POSIX
 - PAL path resolution and page-protection helpers
 - VFS sandboxing under a private local root
+- Lua 5.4 runtime execution of `local://init.lua`
+- file logging to `local://toolkit.log`
 - hook-engine adapters that compile the real MinHook, ShadowHook, and tinyhook backend sources into the platform artifact
 
 Stealth, anti-detection, and unauthorized third-party process tampering are intentionally not part of this repository. The hook layer is a native in-process detour adapter around established platform libraries.
@@ -33,6 +35,12 @@ zig build -Dtarget=aarch64-linux-android -Dshadowhook-root=deps/shadowhook
 zig build -Dtarget=aarch64-ios -Dtinyhook-root=deps/tinyhook
 ```
 
+All builds also require Lua 5.4 source files:
+
+```bash
+zig build -Dlua-root=deps/lua -Dtarget=x86_64-windows-msvc -Dminhook-root=deps/minhook
+```
+
 ## Script Location
 
 At startup the bootstrapper resolves a private root and looks for:
@@ -46,6 +54,16 @@ The VFS rejects path traversal and keeps file access under the resolved private 
 ## Exported C ABI
 
 - `ftk_bootstrap_run_once`
+- `ftk_log_write`
 - `ftk_hook_attach`
 - `ftk_hook_detach`
 - `ftk_memory_protect`
+
+## Lua API
+
+```lua
+Toolkit.Log.info("message")
+Toolkit.Log.warn("message")
+Toolkit.Log.error("message")
+print("also goes to toolkit.log")
+```
