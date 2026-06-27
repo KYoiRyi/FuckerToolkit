@@ -20,14 +20,17 @@ jobs:
             os: windows-2022
             target: x86_64-windows-msvc
             artifact: ftk-windows-x86_64
+            backend: minhook
           - name: Android aarch64
             os: ubuntu-24.04
             target: aarch64-linux-android
             artifact: ftk-android-aarch64
+            backend: shadowhook
           - name: iOS aarch64
             os: macos-15
             target: aarch64-ios
             artifact: ftk-ios-aarch64
+            backend: tinyhook
 
     steps:
       - name: Checkout
@@ -38,12 +41,40 @@ jobs:
         with:
           version: 0.14.1
 
+      - name: Fetch MinHook
+        if: matrix.backend == 'minhook'
+        shell: bash
+        run: git clone --depth 1 --branch v1.3.4 https://github.com/TsudaKageyu/minhook.git deps/minhook
+
+      - name: Fetch ShadowHook
+        if: matrix.backend == 'shadowhook'
+        shell: bash
+        run: git clone --depth 1 https://github.com/bytedance/android-inline-hook.git deps/shadowhook
+
+      - name: Fetch tinyhook
+        if: matrix.backend == 'tinyhook'
+        shell: bash
+        run: git clone --depth 1 https://github.com/Antibioticss/tinyhook.git deps/tinyhook
+
       - name: Compile
-        run: zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe --summary all
+        shell: bash
+        run: |
+          case "${{ matrix.backend }}" in
+            minhook)
+              zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe -Dminhook-root=deps/minhook --summary all
+              ;;
+            shadowhook)
+              zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe -Dshadowhook-root=deps/shadowhook --summary all
+              ;;
+            tinyhook)
+              zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe -Dtinyhook-root=deps/tinyhook --summary all
+              ;;
+          esac
 
       - name: Host tests
         if: matrix.os == 'windows-2022'
-        run: zig build test --summary all
+        shell: bash
+        run: zig build test -Dminhook-root=deps/minhook --summary all
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

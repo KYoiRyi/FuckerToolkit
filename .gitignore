@@ -1,5 +1,7 @@
 build/
 out/
+deps/
+_deps_inspect/
 .vs/
 .vscode/
 CMakeUserPresets.json
@@ -13,4 +15,3 @@ CMakeUserPresets.json
 *.lib
 *.dll
 *.exe
-

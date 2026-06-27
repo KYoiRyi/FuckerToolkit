@@ -7,7 +7,7 @@ This repository currently implements:
 - platform entry points for Windows, Android, Apple, and generic POSIX
 - PAL path resolution and page-protection helpers
 - VFS sandboxing under a private local root
-- hook-engine ABI bindings for MinHook on Windows, ShadowHook on Android, and tinyhook on Apple platforms
+- hook-engine adapters that compile the real MinHook, ShadowHook, and tinyhook backend sources into the platform artifact
 
 Stealth, anti-detection, and unauthorized third-party process tampering are intentionally not part of this repository. The hook layer is a native in-process detour adapter around established platform libraries.
 
@@ -25,7 +25,13 @@ Run host tests:
 zig build test
 ```
 
-The default artifact is a static library under `zig-out/lib`. The library binds to the real platform hook backends by C ABI; final application linkage must provide MinHook, ShadowHook, or tinyhook on the corresponding platform.
+The default artifact is a static library under `zig-out/lib`. Backend source paths are required so the real platform hook library is compiled into the artifact:
+
+```bash
+zig build -Dtarget=x86_64-windows-msvc -Dminhook-root=deps/minhook
+zig build -Dtarget=aarch64-linux-android -Dshadowhook-root=deps/shadowhook
+zig build -Dtarget=aarch64-ios -Dtinyhook-root=deps/tinyhook
+```
 
 ## Script Location
 
