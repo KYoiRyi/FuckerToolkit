@@ -70,7 +70,9 @@ jobs:
               ;;
             tinyhook)
               IOS_SYSROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
-              zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe -Dtinyhook-root=deps/tinyhook -Dapple-sysroot="$IOS_SYSROOT" --summary all
+              CLANG_PATH="$(xcrun --toolchain XcodeDefault --find clang)"
+              TOOLCHAIN_INCLUDE="$(cd "$(dirname "$CLANG_PATH")/.." && pwd)/include"
+              zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe -Dtinyhook-root=deps/tinyhook -Dapple-sysroot="$IOS_SYSROOT" -Dapple-toolchain-include="$TOOLCHAIN_INCLUDE" --summary all
               ;;
           esac
 

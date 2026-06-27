@@ -8,6 +8,7 @@ pub fn build(b: *std.Build) void {
     const tinyhook_root = b.option([]const u8, "tinyhook-root", "Path to a tinyhook source checkout");
     const android_sysroot = b.option([]const u8, "android-sysroot", "Path to the Android NDK sysroot");
     const apple_sysroot = b.option([]const u8, "apple-sysroot", "Path to the Apple SDK sysroot");
+    const apple_toolchain_include = b.option([]const u8, "apple-toolchain-include", "Path to the Apple toolchain include directory");
 
     const lib = b.addStaticLibrary(.{
         .name = "ftk",
@@ -16,7 +17,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     lib.linkLibC();
-    addHookBackendSources(b, lib, target, minhook_root, shadowhook_root, tinyhook_root, android_sysroot, apple_sysroot);
+    addHookBackendSources(b, lib, target, minhook_root, shadowhook_root, tinyhook_root, android_sysroot, apple_sysroot, apple_toolchain_include);
     b.installArtifact(lib);
 
     const check_step = b.step("check", "Compile the toolkit library");
@@ -42,6 +43,7 @@ fn addHookBackendSources(
     tinyhook_root: ?[]const u8,
     android_sysroot: ?[]const u8,
     apple_sysroot: ?[]const u8,
+    apple_toolchain_include: ?[]const u8,
 ) void {
     switch (target.result.os.tag) {
         .windows => {
@@ -50,7 +52,7 @@ fn addHookBackendSources(
         },
         .ios, .macos => {
             const root = tinyhook_root orelse @panic("Apple builds require -Dtinyhook-root=/path/to/tinyhook");
-            addTinyHook(b, lib, root, apple_sysroot);
+            addTinyHook(b, lib, root, apple_sysroot, apple_toolchain_include);
         },
         .linux => {
             if (isAndroid(target)) {
@@ -125,7 +127,12 @@ fn addShadowHook(b: *std.Build, lib: *std.Build.Step.Compile, root: []const u8, 
             "-fdata-sections",
             "-Wno-everything",
             b.fmt("--sysroot={s}", .{path}),
+            "-isystem",
+            b.pathJoin(&.{ path, "usr", "include" }),
+            "-isystem",
+            b.pathJoin(&.{ path, "usr", "include", "aarch64-linux-android" }),
             "-D__ANDROID_API__=23",
+            "-DANDROID",
         }
     else
         &[_][]const u8{
@@ -134,6 +141,7 @@ fn addShadowHook(b: *std.Build, lib: *std.Build.Step.Compile, root: []const u8, 
             "-fdata-sections",
             "-Wno-everything",
             "-D__ANDROID_API__=23",
+            "-DANDROID",
         };
 
     lib.addCSourceFiles(.{
@@ -142,7 +150,13 @@ fn addShadowHook(b: *std.Build, lib: *std.Build.Step.Compile, root: []const u8, 
     });
 }
 
-fn addTinyHook(b: *std.Build, lib: *std.Build.Step.Compile, root: []const u8, sysroot: ?[]const u8) void {
+fn addTinyHook(
+    b: *std.Build,
+    lib: *std.Build.Step.Compile,
+    root: []const u8,
+    sysroot: ?[]const u8,
+    toolchain_include: ?[]const u8,
+) void {
     lib.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ root, "include" }) });
     lib.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ root, "src" }) });
 
@@ -154,24 +168,32 @@ fn addTinyHook(b: *std.Build, lib: *std.Build.Step.Compile, root: []const u8, sy
         b.pathJoin(&.{ root, "src", "objcrt.c" }),
         b.pathJoin(&.{ root, "src", "exhook.c" }),
     };
-    const c_flags = if (sysroot) |path|
-        &[_][]const u8{
-            "-std=c11",
-            "-fvisibility=hidden",
-            "-Wno-everything",
+    var flags = std.ArrayList([]const u8).init(b.allocator);
+    flags.appendSlice(&.{
+        "-std=c11",
+        "-fvisibility=hidden",
+        "-Wno-everything",
+    }) catch @panic("out of memory");
+    if (sysroot) |path| {
+        flags.appendSlice(&.{
             "-isysroot",
             path,
-        }
-    else
-        &[_][]const u8{
-            "-std=c11",
-            "-fvisibility=hidden",
-            "-Wno-everything",
-        };
+            "-isystem",
+            b.pathJoin(&.{ path, "usr", "include" }),
+            "-iframework",
+            b.pathJoin(&.{ path, "System", "Library", "Frameworks" }),
+        }) catch @panic("out of memory");
+    }
+    if (toolchain_include) |path| {
+        flags.appendSlice(&.{
+            "-isystem",
+            path,
+        }) catch @panic("out of memory");
+    }
 
     lib.addCSourceFiles(.{
         .files = &files,
-        .flags = c_flags,
+        .flags = flags.items,
     });
 }
 
