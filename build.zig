@@ -29,6 +29,10 @@ pub fn build(b: *std.Build) void {
             lib.addFrameworkPath(.{ .cwd_relative = b.pathJoin(&.{ path, "System", "Library", "Frameworks" }) });
         }
         lib.linkSystemLibrary("objc");
+        lib.addCSourceFile(.{
+            .file = b.path("src/apple_constructor.c"),
+            .flags = &.{ "-std=c11", "-fvisibility=hidden" },
+        });
     }
     addLuaSources(
         b,

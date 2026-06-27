@@ -102,6 +102,7 @@ jobs:
               ;;
             tinyhook)
               cp zig-out/lib/libftk.dylib dist/libftk.dylib
+              codesign --force --sign - --timestamp=none dist/libftk.dylib
               ;;
           esac
           test "$(find dist -type f | wc -l | tr -d ' ')" = "1"
