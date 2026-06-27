@@ -6,6 +6,8 @@ pub fn build(b: *std.Build) void {
     const minhook_root = b.option([]const u8, "minhook-root", "Path to a MinHook source checkout");
     const shadowhook_root = b.option([]const u8, "shadowhook-root", "Path to an android-inline-hook source checkout");
     const tinyhook_root = b.option([]const u8, "tinyhook-root", "Path to a tinyhook source checkout");
+    const android_sysroot = b.option([]const u8, "android-sysroot", "Path to the Android NDK sysroot");
+    const apple_sysroot = b.option([]const u8, "apple-sysroot", "Path to the Apple SDK sysroot");
 
     const lib = b.addStaticLibrary(.{
         .name = "ftk",
@@ -14,7 +16,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     lib.linkLibC();
-    addHookBackendSources(b, lib, target, minhook_root, shadowhook_root, tinyhook_root);
+    addHookBackendSources(b, lib, target, minhook_root, shadowhook_root, tinyhook_root, android_sysroot, apple_sysroot);
     b.installArtifact(lib);
 
     const check_step = b.step("check", "Compile the toolkit library");
@@ -38,6 +40,8 @@ fn addHookBackendSources(
     minhook_root: ?[]const u8,
     shadowhook_root: ?[]const u8,
     tinyhook_root: ?[]const u8,
+    android_sysroot: ?[]const u8,
+    apple_sysroot: ?[]const u8,
 ) void {
     switch (target.result.os.tag) {
         .windows => {
@@ -46,12 +50,12 @@ fn addHookBackendSources(
         },
         .ios, .macos => {
             const root = tinyhook_root orelse @panic("Apple builds require -Dtinyhook-root=/path/to/tinyhook");
-            addTinyHook(b, lib, root);
+            addTinyHook(b, lib, root, apple_sysroot);
         },
         .linux => {
             if (isAndroid(target)) {
                 const root = shadowhook_root orelse @panic("Android builds require -Dshadowhook-root=/path/to/android-inline-hook");
-                addShadowHook(b, lib, root);
+                addShadowHook(b, lib, root, android_sysroot);
             }
         },
         else => {},
@@ -78,7 +82,7 @@ fn addMinHook(b: *std.Build, lib: *std.Build.Step.Compile, root: []const u8, tar
     });
 }
 
-fn addShadowHook(b: *std.Build, lib: *std.Build.Step.Compile, root: []const u8) void {
+fn addShadowHook(b: *std.Build, lib: *std.Build.Step.Compile, root: []const u8, sysroot: ?[]const u8) void {
     const cpp = b.pathJoin(&.{ root, "shadowhook", "src", "main", "cpp" });
     lib.addIncludePath(.{ .cwd_relative = cpp });
     lib.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ cpp, "include" }) });
@@ -114,18 +118,31 @@ fn addShadowHook(b: *std.Build, lib: *std.Build.Step.Compile, root: []const u8) 
         b.pathJoin(&.{ cpp, "third_party", "xdl", "xdl_iterate.c" }),
         b.pathJoin(&.{ cpp, "third_party", "xdl", "xdl_linker.c" }),
     };
-    lib.addCSourceFiles(.{
-        .files = &files,
-        .flags = &.{
+    const c_flags = if (sysroot) |path|
+        &[_][]const u8{
             "-std=c11",
             "-ffunction-sections",
             "-fdata-sections",
             "-Wno-everything",
-        },
+            b.fmt("--sysroot={s}", .{path}),
+            "-D__ANDROID_API__=23",
+        }
+    else
+        &[_][]const u8{
+            "-std=c11",
+            "-ffunction-sections",
+            "-fdata-sections",
+            "-Wno-everything",
+            "-D__ANDROID_API__=23",
+        };
+
+    lib.addCSourceFiles(.{
+        .files = &files,
+        .flags = c_flags,
     });
 }
 
-fn addTinyHook(b: *std.Build, lib: *std.Build.Step.Compile, root: []const u8) void {
+fn addTinyHook(b: *std.Build, lib: *std.Build.Step.Compile, root: []const u8, sysroot: ?[]const u8) void {
     lib.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ root, "include" }) });
     lib.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ root, "src" }) });
 
@@ -137,13 +154,24 @@ fn addTinyHook(b: *std.Build, lib: *std.Build.Step.Compile, root: []const u8) vo
         b.pathJoin(&.{ root, "src", "objcrt.c" }),
         b.pathJoin(&.{ root, "src", "exhook.c" }),
     };
-    lib.addCSourceFiles(.{
-        .files = &files,
-        .flags = &.{
+    const c_flags = if (sysroot) |path|
+        &[_][]const u8{
             "-std=c11",
             "-fvisibility=hidden",
             "-Wno-everything",
-        },
+            "-isysroot",
+            path,
+        }
+    else
+        &[_][]const u8{
+            "-std=c11",
+            "-fvisibility=hidden",
+            "-Wno-everything",
+        };
+
+    lib.addCSourceFiles(.{
+        .files = &files,
+        .flags = c_flags,
     });
 }
 
