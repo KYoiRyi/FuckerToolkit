@@ -35,12 +35,26 @@ fn androidRoot(allocator: std.mem.Allocator) ![]u8 {
 }
 
 fn appleRoot(allocator: std.mem.Allocator) ![]u8 {
+    if (appleModuleDir(allocator)) |dir| return dir;
     if (envOrNull(allocator, "HOME")) |home| {
         defer allocator.free(home);
         return std.fs.path.join(allocator, &.{ home, "Library", "Application Support", "FuckerToolkit" });
     }
     return allocator.dupe(u8, "/tmp/FuckerToolkit");
 }
+
+fn appleModuleDir(allocator: std.mem.Allocator) ?[]u8 {
+    if (builtin.os.tag != .ios and builtin.os.tag != .macos) return null;
+
+    var buffer: [1024]u8 = undefined;
+    const len = ftk_apple_module_dir(&buffer, buffer.len);
+    if (len <= 0) return null;
+
+    const path_len: usize = @as(usize, @intCast(len));
+    return allocator.dupe(u8, buffer[0..path_len]) catch null;
+}
+
+extern fn ftk_apple_module_dir(buffer: [*]u8, buffer_len: usize) callconv(.c) c_int;
 
 fn posixRoot(allocator: std.mem.Allocator) ![]u8 {
     if (envOrNull(allocator, "XDG_DATA_HOME")) |base| {

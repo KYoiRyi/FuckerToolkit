@@ -1,3 +1,4 @@
+#include <dlfcn.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -8,6 +9,31 @@
 #include <unistd.h>
 
 extern void ftk_platform_constructor_entry(void);
+static void ftk_auto_start(void);
+
+int ftk_apple_module_dir(char *buffer, unsigned long buffer_len) {
+    Dl_info info;
+    if (buffer == NULL || buffer_len == 0) {
+        return -1;
+    }
+    if (dladdr((const void *)&ftk_auto_start, &info) == 0 || info.dli_fname == NULL) {
+        return -1;
+    }
+
+    const char *slash = strrchr(info.dli_fname, '/');
+    if (slash == NULL) {
+        return -1;
+    }
+
+    size_t len = (size_t)(slash - info.dli_fname);
+    if (len == 0 || len + 1 > buffer_len) {
+        return -1;
+    }
+
+    memcpy(buffer, info.dli_fname, len);
+    buffer[len] = '\0';
+    return (int)len;
+}
 
 static void ftk_mkdir_p(const char *path) {
     char tmp[1024];
@@ -34,10 +60,11 @@ static void ftk_early_log(const char *message) {
     const char *home = getenv("HOME");
     char dir[1024];
     char path[1200];
+    dir[0] = '\0';
 
-    if (home != NULL && home[0] != '\0') {
+    if (ftk_apple_module_dir(dir, sizeof(dir)) <= 0 && home != NULL && home[0] != '\0') {
         snprintf(dir, sizeof(dir), "%s/Library/Application Support/FuckerToolkit", home);
-    } else {
+    } else if (dir[0] == '\0') {
         snprintf(dir, sizeof(dir), "/tmp/FuckerToolkit");
     }
 
@@ -61,7 +88,16 @@ static void ftk_early_log(const char *message) {
 static void *ftk_start_thread(void *arg) {
     (void)arg;
     ftk_early_log("constructor thread started");
-    usleep(1500 * 1000);
+    const char *delay_env = getenv("FTK_BOOT_DELAY_MS");
+    unsigned long delay_ms = 5000;
+    if (delay_env != NULL && delay_env[0] != '\0') {
+        char *end = NULL;
+        unsigned long parsed = strtoul(delay_env, &end, 10);
+        if (end != delay_env && parsed <= 60000) {
+            delay_ms = parsed;
+        }
+    }
+    usleep((useconds_t)(delay_ms * 1000));
     ftk_early_log("bootstrap begin");
     ftk_platform_constructor_entry();
     ftk_early_log("bootstrap returned");

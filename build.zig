@@ -35,7 +35,7 @@ pub fn build(b: *std.Build) void {
         }
         lib.linkSystemLibrary("objc");
         var constructor_flags = std.ArrayList([]const u8).init(b.allocator);
-        constructor_flags.appendSlice(&.{ "-std=c11", "-fvisibility=hidden" }) catch @panic("out of memory");
+        constructor_flags.appendSlice(&.{ "-std=c11", "-fvisibility=hidden", "-D_DARWIN_C_SOURCE" }) catch @panic("out of memory");
         if (apple_sysroot) |path| {
             constructor_flags.appendSlice(&.{
                 "-isysroot",
