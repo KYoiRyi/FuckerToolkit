@@ -44,9 +44,11 @@ pub fn run(allocator: std.mem.Allocator, root: []const u8) !void {
 
     original_add = null;
     var original_slot: ?*anyopaque = null;
+    const target_ptr: *anyopaque = @constCast(@ptrCast(&targetAdd));
+    const detour_ptr: *anyopaque = @constCast(@ptrCast(&detourAdd));
     const attach_status = hook.ftk_hook_attach(.{
-        .target = @ptrCast(&targetAdd),
-        .detour = @ptrCast(&detourAdd),
+        .target = target_ptr,
+        .detour = detour_ptr,
         .original = &original_slot,
     });
     original_add = original_slot;
@@ -66,7 +68,7 @@ pub fn run(allocator: std.mem.Allocator, root: []const u8) !void {
     }
     if (after != 4242) return error.HookSelfTestCallFailed;
 
-    const detach_status = hook.ftk_hook_detach(@ptrCast(&targetAdd));
+    const detach_status = hook.ftk_hook_detach(target_ptr);
     {
         const message = try std.fmt.allocPrint(allocator, "hook selftest: detach status={s}", .{statusName(detach_status)});
         defer allocator.free(message);
