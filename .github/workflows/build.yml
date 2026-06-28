@@ -61,6 +61,11 @@ jobs:
         shell: bash
         run: git clone --depth 1 https://github.com/Antibioticss/tinyhook.git deps/tinyhook
 
+      - name: Install ldid
+        if: matrix.backend == 'tinyhook'
+        shell: bash
+        run: brew install ldid
+
       - name: Compile
         shell: bash
         run: |
@@ -102,6 +107,7 @@ jobs:
               ;;
             tinyhook)
               cp zig-out/lib/libftk.dylib dist/libftk.dylib
+              ldid -S dist/libftk.dylib
               otool -l dist/libftk.dylib >/dev/null
               ;;
           esac
