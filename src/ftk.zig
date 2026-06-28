@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 pub const bootstrap = @import("bootstrap.zig");
 pub const entry = @import("entry.zig");
 pub const hook = @import("hook.zig");
+pub const hook_selftest = @import("hook_selftest.zig");
 pub const logger = @import("logger.zig");
 pub const lua_runtime = @import("lua_runtime.zig");
 pub const memory = @import("memory.zig");

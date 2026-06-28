@@ -1,5 +1,6 @@
 const std = @import("std");
 const logger = @import("logger.zig");
+const hook_selftest = @import("hook_selftest.zig");
 
 const LUA_OK: c_int = 0;
 const LUA_MULTRET: c_int = -1;
@@ -60,7 +61,7 @@ pub const Context = struct {
     }
 
     fn registerToolkit(self: *Context) void {
-        lua_createtable(self.state, 0, 1);
+        lua_createtable(self.state, 0, 2);
         lua_createtable(self.state, 0, 3);
 
         lua_pushcclosure(self.state, luaLogInfo, 0);
@@ -71,6 +72,12 @@ pub const Context = struct {
         lua_setfield(self.state, -2, "error");
 
         lua_setfield(self.state, -2, "Log");
+
+        lua_createtable(self.state, 0, 1);
+        lua_pushcclosure(self.state, luaHookSelfTest, 0);
+        lua_setfield(self.state, -2, "SelfTest");
+        lua_setfield(self.state, -2, "Hook");
+
         lua_setglobal(self.state, "Toolkit");
 
         lua_pushcclosure(self.state, luaPrint, 0);
@@ -126,4 +133,24 @@ fn luaLogError(L: ?*LuaState) callconv(.c) c_int {
 
 fn luaPrint(L: ?*LuaState) callconv(.c) c_int {
     return writeLuaMessage(L, .info, 1);
+}
+
+fn luaHookSelfTest(L: ?*LuaState) callconv(.c) c_int {
+    _ = L;
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    const pal = @import("pal.zig");
+    const root = pal.privateRoot(allocator) catch return 0;
+    defer allocator.free(root);
+
+    hook_selftest.run(allocator, root) catch |err| {
+        const message = std.fmt.allocPrint(allocator, "hook selftest: failed with {s}", .{@errorName(err)}) catch return 0;
+        defer allocator.free(message);
+        var log = logger.Logger{ .allocator = allocator, .root = root };
+        log.write(.err, message) catch {};
+        return 0;
+    };
+    return 0;
 }

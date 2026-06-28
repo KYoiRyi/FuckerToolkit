@@ -27,7 +27,7 @@ Run host tests:
 zig build test
 ```
 
-The default artifact is a static library under `zig-out/lib`. Backend source paths are required so the real platform hook library is compiled into the artifact:
+The default artifact is a shared library for the selected target. Backend source paths are required so the real platform hook library is compiled into the artifact:
 
 ```bash
 zig build -Dtarget=x86_64-windows-msvc -Dminhook-root=deps/minhook
@@ -51,6 +51,19 @@ local://init.lua
 
 The VFS rejects path traversal and keeps file access under the resolved private root.
 
+On iOS/LiveContainer the private root is:
+
+```text
+Documents/FuckerToolkit
+```
+
+Use:
+
+```text
+Documents/FuckerToolkit/init.lua
+Documents/FuckerToolkit/toolkit.log
+```
+
 ## Exported C ABI
 
 - `ftk_bootstrap_run_once`
@@ -67,3 +80,14 @@ Toolkit.Log.warn("message")
 Toolkit.Log.error("message")
 print("also goes to toolkit.log")
 ```
+
+Safe hook backend smoke test:
+
+```lua
+Toolkit.Hook.SelfTest()
+```
+
+To run the verbose sample, copy `examples/init_hook_selftest.lua` to
+`Documents/FuckerToolkit/init.lua`. It hooks an internal native test function,
+checks the detour result, detaches it, and writes detailed status lines to
+`toolkit.log`.
