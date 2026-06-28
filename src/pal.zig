@@ -37,7 +37,7 @@ fn androidRoot(allocator: std.mem.Allocator) ![]u8 {
 fn appleRoot(allocator: std.mem.Allocator) ![]u8 {
     if (envOrNull(allocator, "HOME")) |home| {
         defer allocator.free(home);
-        return std.fs.path.join(allocator, &.{ home, "Library", "Application Support", "FuckerToolkit" });
+        return std.fs.path.join(allocator, &.{ home, "Documents", "FuckerToolkit" });
     }
     return allocator.dupe(u8, "/tmp/FuckerToolkit");
 }
