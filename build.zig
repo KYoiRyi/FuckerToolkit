@@ -34,9 +34,24 @@ pub fn build(b: *std.Build) void {
             lib.addFrameworkPath(.{ .cwd_relative = b.pathJoin(&.{ path, "System", "Library", "Frameworks" }) });
         }
         lib.linkSystemLibrary("objc");
+        var constructor_flags = std.ArrayList([]const u8).init(b.allocator);
+        constructor_flags.appendSlice(&.{ "-std=c11", "-fvisibility=hidden" }) catch @panic("out of memory");
+        if (apple_sysroot) |path| {
+            constructor_flags.appendSlice(&.{
+                "-isysroot",
+                path,
+                "-isystem",
+                b.pathJoin(&.{ path, "usr", "include" }),
+                "-iframework",
+                b.pathJoin(&.{ path, "System", "Library", "Frameworks" }),
+            }) catch @panic("out of memory");
+        }
+        if (apple_toolchain_include) |path| {
+            constructor_flags.appendSlice(&.{ "-isystem", path }) catch @panic("out of memory");
+        }
         lib.addCSourceFile(.{
             .file = b.path("src/apple_constructor.c"),
-            .flags = &.{ "-std=c11", "-fvisibility=hidden" },
+            .flags = constructor_flags.items,
         });
     }
     addLuaSources(
