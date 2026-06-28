@@ -29,6 +29,8 @@ pub fn build(b: *std.Build) void {
         }
         lib.linkSystemLibrary("log");
     } else if (target.result.os.tag == .ios or target.result.os.tag == .macos) {
+        lib.headerpad_size = 0x4000;
+        lib.headerpad_max_install_names = true;
         if (apple_sysroot) |path| {
             lib.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ path, "usr", "lib" }) });
             lib.addFrameworkPath(.{ .cwd_relative = b.pathJoin(&.{ path, "System", "Library", "Frameworks" }) });
