@@ -1,95 +1,32 @@
 #include <dlfcn.h>
-#include <fcntl.h>
+#include <mach-o/dyld.h>
+#include <mach-o/loader.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <unistd.h>
 
 extern void ftk_platform_constructor_entry(void);
-static void ftk_auto_start(void);
 
-int ftk_apple_module_dir(char *buffer, unsigned long buffer_len) {
-    Dl_info info;
-    if (buffer == NULL || buffer_len == 0) {
-        return -1;
+static pthread_mutex_t ftk_start_lock = PTHREAD_MUTEX_INITIALIZER;
+static int ftk_started = 0;
+
+static int ftk_is_target_image(const char *path) {
+    const char *override = getenv("FTK_BOOT_IMAGE");
+    if (override != NULL && override[0] != '\0') {
+        return strstr(path, override) != NULL;
     }
-    if (dladdr((const void *)&ftk_auto_start, &info) == 0 || info.dli_fname == NULL) {
-        return -1;
-    }
-
-    const char *slash = strrchr(info.dli_fname, '/');
-    if (slash == NULL) {
-        return -1;
-    }
-
-    size_t len = (size_t)(slash - info.dli_fname);
-    if (len == 0 || len + 1 > buffer_len) {
-        return -1;
-    }
-
-    memcpy(buffer, info.dli_fname, len);
-    buffer[len] = '\0';
-    return (int)len;
-}
-
-static void ftk_mkdir_p(const char *path) {
-    char tmp[1024];
-    size_t len = strnlen(path, sizeof(tmp) - 1);
-    if (len == 0 || len >= sizeof(tmp)) {
-        return;
-    }
-
-    memcpy(tmp, path, len);
-    tmp[len] = '\0';
-
-    for (char *p = tmp + 1; *p != '\0'; ++p) {
-        if (*p != '/') {
-            continue;
-        }
-        *p = '\0';
-        (void)mkdir(tmp, 0700);
-        *p = '/';
-    }
-    (void)mkdir(tmp, 0700);
-}
-
-static void ftk_early_log(const char *message) {
-    const char *home = getenv("HOME");
-    char dir[1024];
-    char path[1200];
-    dir[0] = '\0';
-
-    if (ftk_apple_module_dir(dir, sizeof(dir)) <= 0 && home != NULL && home[0] != '\0') {
-        snprintf(dir, sizeof(dir), "%s/Library/Application Support/FuckerToolkit", home);
-    } else if (dir[0] == '\0') {
-        snprintf(dir, sizeof(dir), "/tmp/FuckerToolkit");
-    }
-
-    ftk_mkdir_p(dir);
-    snprintf(path, sizeof(path), "%s/toolkit.log", dir);
-
-    int fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0600);
-    if (fd < 0) {
-        fd = open("/tmp/ftk-toolkit.log", O_WRONLY | O_CREAT | O_APPEND, 0600);
-    }
-    if (fd < 0) {
-        return;
-    }
-
-    (void)write(fd, "[early] ", 8);
-    (void)write(fd, message, strlen(message));
-    (void)write(fd, "\n", 1);
-    (void)close(fd);
+    return strstr(path, "UnityFramework") != NULL ||
+           strstr(path, "libil2cpp") != NULL ||
+           strstr(path, "il2cpp") != NULL;
 }
 
 static void *ftk_start_thread(void *arg) {
     (void)arg;
-    ftk_early_log("constructor thread started");
+
     const char *delay_env = getenv("FTK_BOOT_DELAY_MS");
-    unsigned long delay_ms = 5000;
+    unsigned long delay_ms = 1000;
     if (delay_env != NULL && delay_env[0] != '\0') {
         char *end = NULL;
         unsigned long parsed = strtoul(delay_env, &end, 10);
@@ -97,20 +34,51 @@ static void *ftk_start_thread(void *arg) {
             delay_ms = parsed;
         }
     }
+
+    printf("[ftk] bootstrap scheduled, delay=%lums\n", delay_ms);
     usleep((useconds_t)(delay_ms * 1000));
-    ftk_early_log("bootstrap begin");
+    printf("[ftk] bootstrap begin\n");
     ftk_platform_constructor_entry();
-    ftk_early_log("bootstrap returned");
+    printf("[ftk] bootstrap returned\n");
     return NULL;
+}
+
+static void ftk_schedule_bootstrap(void) {
+    pthread_mutex_lock(&ftk_start_lock);
+    if (ftk_started != 0) {
+        pthread_mutex_unlock(&ftk_start_lock);
+        return;
+    }
+    ftk_started = 1;
+    pthread_mutex_unlock(&ftk_start_lock);
+
+    pthread_t thread;
+    int rc = pthread_create(&thread, NULL, ftk_start_thread, NULL);
+    if (rc != 0) {
+        printf("[ftk] pthread_create failed: %d\n", rc);
+        return;
+    }
+    pthread_detach(thread);
+}
+
+static void ftk_on_image_added(const struct mach_header *mh, intptr_t slide) {
+    (void)slide;
+
+    Dl_info info;
+    if (dladdr(mh, &info) == 0 || info.dli_fname == NULL) {
+        return;
+    }
+
+    if (!ftk_is_target_image(info.dli_fname)) {
+        return;
+    }
+
+    printf("[ftk] target image loaded: %s\n", info.dli_fname);
+    ftk_schedule_bootstrap();
 }
 
 __attribute__((constructor))
 static void ftk_auto_start(void) {
-    pthread_t thread;
-    int rc = pthread_create(&thread, NULL, ftk_start_thread, NULL);
-    if (rc != 0) {
-        ftk_early_log("pthread_create failed");
-        return;
-    }
-    pthread_detach(thread);
+    printf("[ftk] loaded, registering dyld image callback\n");
+    _dyld_register_func_for_add_image(ftk_on_image_added);
 }
