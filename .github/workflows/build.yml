@@ -87,9 +87,11 @@ jobs:
               cmake -S deps/dobby -B deps/dobby-build \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_SYSTEM_NAME=iOS \
+                -DCMAKE_SYSTEM_PROCESSOR=arm64 \
                 -DCMAKE_OSX_SYSROOT=iphoneos \
                 -DCMAKE_OSX_ARCHITECTURES=arm64 \
                 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
+                -DDOBBY_BUILD_SILICON=ON \
                 -DDOBBY_GENERATE_SHARED=OFF \
                 -DDOBBY_BUILD_EXAMPLE=OFF \
                 -DDOBBY_BUILD_TEST=OFF
