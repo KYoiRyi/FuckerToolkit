@@ -114,6 +114,7 @@ Toolkit.Hook.AutoSmokeTest()
 ```
 
 The sample `examples/init_auto_smoke.lua` records the discovered
-`UnityFramework`/`libil2cpp` images, then uses `dlsym(RTLD_DEFAULT, "atoi")`
-and Dobby to validate that a basic C symbol can be detoured without changing
-its return value.
+`UnityFramework`/`libil2cpp` images, then uses Dobby to detour a tiny local
+probe function. Shared-cache system symbols such as `atoi` are not used by the
+default smoke test because some LiveContainer environments reject that patch
+path.

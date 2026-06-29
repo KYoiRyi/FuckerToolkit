@@ -32,6 +32,10 @@ static void *g_symbol_smoke_target = NULL;
 static void *g_symbol_smoke_original = NULL;
 
 typedef int (*ftk_atoi_fn_t)(const char *);
+typedef int (*ftk_probe_fn_t)(void);
+
+extern int ftk_selftest_probe_target(void);
+extern int ftk_selftest_probe_detour(void);
 
 static int ftk_detour_atoi(const char *value) {
     g_symbol_smoke_called += 1;
@@ -84,31 +88,52 @@ void *ftk_apple_hook_symbol_smoke_original(void) {
 
 int ftk_apple_hook_symbol_smoke_test(const char *symbol) {
     if (symbol == NULL) return FTK_HOOK_INVALID_TARGET;
-    if (strcmp(symbol, "atoi") != 0) return FTK_HOOK_INVALID_TARGET;
 
     g_symbol_smoke_rc = 0;
     g_symbol_smoke_before = 0;
     g_symbol_smoke_after = 0;
     g_symbol_smoke_called = 0;
-    g_symbol_smoke_target = dlsym(RTLD_DEFAULT, symbol);
     g_symbol_smoke_original = NULL;
 
-    if (g_symbol_smoke_target == NULL) return FTK_HOOK_INVALID_TARGET;
+    if (strcmp(symbol, "local_probe") == 0) {
+        g_symbol_smoke_target = (void *)ftk_selftest_probe_target;
+        ftk_probe_fn_t target = (ftk_probe_fn_t)g_symbol_smoke_target;
+        g_symbol_smoke_before = target();
 
-    ftk_atoi_fn_t target = (ftk_atoi_fn_t)g_symbol_smoke_target;
-    g_symbol_smoke_before = target("12345");
+        g_last_stage = 300;
+        int rc = DobbyHook(g_symbol_smoke_target, (void *)ftk_selftest_probe_detour, &g_symbol_smoke_original);
+        g_last_stage = 301;
+        g_symbol_smoke_rc = rc;
+        if (rc != 0) return FTK_HOOK_BACKEND_ERROR;
 
-    g_last_stage = 300;
-    int rc = DobbyHook(g_symbol_smoke_target, (void *)ftk_detour_atoi, &g_symbol_smoke_original);
-    g_last_stage = 301;
-    g_symbol_smoke_rc = rc;
-    if (rc != 0) return FTK_HOOK_BACKEND_ERROR;
+        g_symbol_smoke_after = target();
+        g_symbol_smoke_called = g_symbol_smoke_after == 22 ? 1 : 0;
+        if (g_symbol_smoke_before != 11) return FTK_HOOK_BACKEND_ERROR;
+        if (g_symbol_smoke_after != 22) return FTK_HOOK_BACKEND_ERROR;
+        return FTK_HOOK_OK;
+    }
 
-    g_symbol_smoke_after = target("12345");
-    if (g_symbol_smoke_before != 12345) return FTK_HOOK_BACKEND_ERROR;
-    if (g_symbol_smoke_after != 12345) return FTK_HOOK_BACKEND_ERROR;
-    if (g_symbol_smoke_called <= 0) return FTK_HOOK_BACKEND_ERROR;
-    return FTK_HOOK_OK;
+    if (strcmp(symbol, "atoi") == 0) {
+        g_symbol_smoke_target = dlsym(RTLD_DEFAULT, symbol);
+        if (g_symbol_smoke_target == NULL) return FTK_HOOK_INVALID_TARGET;
+
+        ftk_atoi_fn_t target = (ftk_atoi_fn_t)g_symbol_smoke_target;
+        g_symbol_smoke_before = target("12345");
+
+        g_last_stage = 400;
+        int rc = DobbyHook(g_symbol_smoke_target, (void *)ftk_detour_atoi, &g_symbol_smoke_original);
+        g_last_stage = 401;
+        g_symbol_smoke_rc = rc;
+        if (rc != 0) return FTK_HOOK_BACKEND_ERROR;
+
+        g_symbol_smoke_after = target("12345");
+        if (g_symbol_smoke_before != 12345) return FTK_HOOK_BACKEND_ERROR;
+        if (g_symbol_smoke_after != 12345) return FTK_HOOK_BACKEND_ERROR;
+        if (g_symbol_smoke_called <= 0) return FTK_HOOK_BACKEND_ERROR;
+        return FTK_HOOK_OK;
+    }
+
+    return FTK_HOOK_INVALID_TARGET;
 }
 
 int ftk_apple_hook_probe_no_trampoline(void *target, void *detour) {

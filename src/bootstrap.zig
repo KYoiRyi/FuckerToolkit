@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const vfs = @import("vfs.zig");
 const pal = @import("pal.zig");
 const logger = @import("logger.zig");
@@ -31,12 +32,20 @@ pub fn runOnce(allocator: std.mem.Allocator, options: Options) !void {
         else => return err,
     };
 
-    var context = try lua.Context.init(allocator, fs.root);
-    defer context.deinit();
+    const context_ptr = try allocator.create(lua.Context);
+    context_ptr.* = try lua.Context.init(allocator, fs.root);
+    const keep_runtime_alive = options.keep_runtime_alive or builtin.os.tag == .ios or builtin.os.tag == .macos;
+    defer if (!keep_runtime_alive) {
+        context_ptr.deinit();
+        allocator.destroy(context_ptr);
+    };
 
     try log.write(.info, "executing local://init.lua");
-    try context.executeFile(init_path);
+    try context_ptr.executeFile(init_path);
     try log.write(.info, "local://init.lua finished");
+    if (keep_runtime_alive) {
+        try log.write(.info, "Lua runtime kept alive after bootstrap");
+    }
 }
 
 pub export fn ftk_bootstrap_run_once() callconv(.c) c_int {

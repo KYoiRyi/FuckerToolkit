@@ -355,13 +355,13 @@ fn luaHookAutoSmokeTest(L: ?*LuaState) callconv(.c) c_int {
         return 1;
     }
 
-    logger.writeDefault(allocator, .info, "auto smoke: trying dlsym/tiny_hook symbol=atoi") catch {};
-    const status = statusFromInt(ftk_apple_hook_symbol_smoke_test("atoi"));
+    logger.writeDefault(allocator, .info, "auto smoke: trying DobbyHook target=local_probe") catch {};
+    const status = statusFromInt(ftk_apple_hook_symbol_smoke_test("local_probe"));
     const target = ftk_apple_hook_symbol_smoke_target();
     const original = ftk_apple_hook_symbol_smoke_original();
     const message = std.fmt.allocPrint(
         allocator,
-        "auto smoke: symbol=atoi status={s} rc={d} stage={d} target=0x{x} original=0x{x} before={d} after={d} called={d}",
+        "auto smoke: target=local_probe status={s} rc={d} stage={d} address=0x{x} original=0x{x} before={d} after={d} called={d}",
         .{
             statusName(status),
             ftk_apple_hook_symbol_smoke_rc(),
