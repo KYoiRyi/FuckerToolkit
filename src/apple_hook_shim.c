@@ -20,6 +20,8 @@ static ftk_apple_hook_entry_t g_hooks[128];
 static size_t g_hook_count = 0;
 static int g_last_attach_rc = 0;
 static int g_last_detach_rc = 0;
+static int g_last_probe_rc = 0;
+static int g_last_stage = 0;
 
 int ftk_apple_hook_last_attach_rc(void) {
     return g_last_attach_rc;
@@ -27,6 +29,25 @@ int ftk_apple_hook_last_attach_rc(void) {
 
 int ftk_apple_hook_last_detach_rc(void) {
     return g_last_detach_rc;
+}
+
+int ftk_apple_hook_last_probe_rc(void) {
+    return g_last_probe_rc;
+}
+
+int ftk_apple_hook_last_stage(void) {
+    return g_last_stage;
+}
+
+int ftk_apple_hook_probe_no_trampoline(void *target, void *detour) {
+    if (target == NULL) return FTK_HOOK_INVALID_TARGET;
+    if (detour == NULL) return FTK_HOOK_INVALID_DETOUR;
+
+    g_last_stage = 100;
+    int rc = tiny_hook(target, detour, NULL);
+    g_last_stage = 101;
+    g_last_probe_rc = rc;
+    return rc == 0 ? FTK_HOOK_OK : FTK_HOOK_BACKEND_ERROR;
 }
 
 int ftk_apple_hook_attach(void *target, void *detour, void **original) {
@@ -44,7 +65,11 @@ int ftk_apple_hook_attach(void *target, void *detour, void **original) {
     }
 
     th_bak_t backup = {0};
-    int rc = tiny_hook_ex(&backup, target, detour, original);
+    backup.address = target;
+    backup.jump_size = 0;
+    g_last_stage = 200;
+    int rc = tiny_hook(target, detour, original);
+    g_last_stage = 201;
     g_last_attach_rc = rc;
     if (rc != 0) {
         return FTK_HOOK_BACKEND_ERROR;

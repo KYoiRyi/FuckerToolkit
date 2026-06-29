@@ -7,8 +7,13 @@ var original_add: ?*anyopaque = null;
 
 extern fn ftk_selftest_target_add(a: c_int, b: c_int) callconv(.c) c_int;
 extern fn ftk_selftest_detour_add(a: c_int, b: c_int) callconv(.c) c_int;
+extern fn ftk_selftest_probe_target() callconv(.c) c_int;
+extern fn ftk_selftest_probe_detour() callconv(.c) c_int;
+extern fn ftk_apple_hook_probe_no_trampoline(target: *anyopaque, detour: *anyopaque) callconv(.c) c_int;
+extern fn ftk_apple_hook_last_probe_rc() callconv(.c) c_int;
 extern fn ftk_apple_hook_last_attach_rc() callconv(.c) c_int;
 extern fn ftk_apple_hook_last_detach_rc() callconv(.c) c_int;
+extern fn ftk_apple_hook_last_stage() callconv(.c) c_int;
 
 fn statusName(status: hook.Status) []const u8 {
     return switch (status) {
@@ -19,6 +24,18 @@ fn statusName(status: hook.Status) []const u8 {
         .already_attached => "already_attached",
         .not_attached => "not_attached",
         .backend_error => "backend_error",
+    };
+}
+
+fn statusFromInt(value: c_int) hook.Status {
+    return switch (value) {
+        0 => .ok,
+        1 => .invalid_target,
+        2 => .invalid_detour,
+        3 => .invalid_original,
+        4 => .already_attached,
+        5 => .not_attached,
+        else => .backend_error,
     };
 }
 
@@ -47,9 +64,57 @@ fn isApple() bool {
     return builtin.os.tag == .ios or builtin.os.tag == .macos;
 }
 
+fn runAppleProbe(allocator: std.mem.Allocator, log: *logger.Logger) !void {
+    const before = ftk_selftest_probe_target();
+    {
+        const message = try std.fmt.allocPrint(allocator, "hook selftest: apple probe baseline returned {d}", .{before});
+        defer allocator.free(message);
+        try log.write(.info, message);
+    }
+
+    const target_ptr: *anyopaque = @constCast(@ptrCast(&ftk_selftest_probe_target));
+    const detour_ptr: *anyopaque = @constCast(@ptrCast(&ftk_selftest_probe_detour));
+    {
+        const message = try std.fmt.allocPrint(allocator, "hook selftest: apple probe attaching target=0x{x} detour=0x{x}", .{
+            @intFromPtr(target_ptr),
+            @intFromPtr(detour_ptr),
+        });
+        defer allocator.free(message);
+        try log.write(.info, message);
+    }
+    try logBytes(allocator, log, "apple probe before attach", target_ptr);
+
+    const status = statusFromInt(ftk_apple_hook_probe_no_trampoline(target_ptr, detour_ptr));
+    {
+        const message = try std.fmt.allocPrint(
+            allocator,
+            "hook selftest: apple probe attach status={s} rc={d} stage={d}",
+            .{ statusName(status), ftk_apple_hook_last_probe_rc(), ftk_apple_hook_last_stage() },
+        );
+        defer allocator.free(message);
+        try log.write(if (status == .ok) .info else .err, message);
+    }
+    if (status != .ok) return error.HookSelfTestAttachFailed;
+    try logBytes(allocator, log, "apple probe after attach", target_ptr);
+
+    const after = ftk_selftest_probe_target();
+    {
+        const message = try std.fmt.allocPrint(allocator, "hook selftest: apple probe hooked call returned {d}", .{after});
+        defer allocator.free(message);
+        try log.write(.info, message);
+    }
+    if (after != 22) return error.HookSelfTestCallFailed;
+}
+
 pub fn run(allocator: std.mem.Allocator, root: []const u8) !void {
     var log = logger.Logger{ .allocator = allocator, .root = root };
     try log.write(.info, "hook selftest: start");
+
+    if (isApple()) {
+        try log.write(.info, "hook selftest: running Apple no-trampoline probe");
+        try runAppleProbe(allocator, &log);
+        try log.write(.info, "hook selftest: Apple no-trampoline probe passed");
+    }
 
     const before = ftk_selftest_target_add(10, 20);
     const expected_before: c_int = 37;
@@ -90,6 +155,9 @@ pub fn run(allocator: std.mem.Allocator, root: []const u8) !void {
         const message = try std.fmt.allocPrint(allocator, "hook selftest: tinyhook attach rc={d}", .{ftk_apple_hook_last_attach_rc()});
         defer allocator.free(message);
         try log.write(.info, message);
+        const stage_message = try std.fmt.allocPrint(allocator, "hook selftest: tinyhook attach stage={d}", .{ftk_apple_hook_last_stage()});
+        defer allocator.free(stage_message);
+        try log.write(.info, stage_message);
     }
     if (attach_status != .ok and attach_status != .already_attached) return error.HookSelfTestAttachFailed;
     try logBytes(allocator, &log, "target after attach", target_ptr);

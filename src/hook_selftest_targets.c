@@ -21,3 +21,11 @@ FTK_NOINLINE int ftk_selftest_detour_add(int a, int b) {
     ftk_selftest_sink += (a ^ b) & 1;
     return 4242;
 }
+
+FTK_NOINLINE int ftk_selftest_probe_target(void) {
+    return 11;
+}
+
+FTK_NOINLINE int ftk_selftest_probe_detour(void) {
+    return 22;
+}
