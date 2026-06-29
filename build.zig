@@ -41,7 +41,6 @@ pub fn build(b: *std.Build) void {
             lib.addFrameworkPath(.{ .cwd_relative = b.pathJoin(&.{ path, "System", "Library", "Frameworks" }) });
         }
         lib.linkSystemLibrary("objc");
-        lib.linkSystemLibrary("c++");
         var constructor_flags = std.ArrayList([]const u8).init(b.allocator);
         constructor_flags.appendSlice(&.{ "-std=c11", "-fvisibility=hidden", "-D_DARWIN_C_SOURCE" }) catch @panic("out of memory");
         if (apple_sysroot) |path| {
