@@ -18,6 +18,10 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     lib.linkLibC();
+    lib.addCSourceFile(.{
+        .file = b.path("src/hook_selftest_targets.c"),
+        .flags = &.{ "-std=c11" },
+    });
     if (target.result.os.tag == .windows) {
         lib.addCSourceFile(.{
             .file = b.path("src/windows_entry.c"),
