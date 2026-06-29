@@ -1,5 +1,6 @@
 const builtin = @import("builtin");
 const std = @import("std");
+const memory = @import("memory.zig");
 
 pub const Status = enum(c_int) {
     ok = 0,
@@ -135,6 +136,7 @@ const TinyHookBackup = extern struct {
 };
 extern fn tiny_hook_ex(backup: *TinyHookBackup, function: *anyopaque, destination: *anyopaque, origin: *?*anyopaque) callconv(.c) c_int;
 extern fn tiny_unhook_ex(backup: *const TinyHookBackup) callconv(.c) c_int;
+extern fn sys_icache_invalidate(start: *const anyopaque, len: usize) callconv(.c) void;
 
 var apple_backup_count: usize = 0;
 var apple_targets: [128]*anyopaque = undefined;
@@ -164,7 +166,9 @@ fn appleAttach(hook: NativeHook) Status {
 fn appleDetach(target: *anyopaque) Status {
     for (apple_targets[0..apple_backup_count], 0..) |item, index| {
         if (item == target) {
-            if (tiny_unhook_ex(&apple_backups[index]) != 0) return .backend_error;
+            if (tiny_unhook_ex(&apple_backups[index]) != 0 and !appleForceRestore(&apple_backups[index])) {
+                return .backend_error;
+            }
             apple_backup_count -= 1;
             apple_targets[index] = apple_targets[apple_backup_count];
             apple_backups[index] = apple_backups[apple_backup_count];
@@ -172,4 +176,26 @@ fn appleDetach(target: *anyopaque) Status {
         }
     }
     return .not_attached;
+}
+
+fn appleForceRestore(backup: *const TinyHookBackup) bool {
+    const address = backup.address orelse return false;
+    if (backup.jump_size <= 0 or backup.jump_size > backup.head_bak.len) return false;
+
+    const len: usize = @intCast(backup.jump_size);
+    const raw_addr = @intFromPtr(address);
+    const page_size: usize = 0x4000;
+    const page_start = raw_addr & ~(page_size - 1);
+    const page_end = (raw_addr + len + page_size - 1) & ~(page_size - 1);
+    const protect_len = page_end - page_start;
+    const page_ptr: *anyopaque = @ptrFromInt(page_start);
+
+    if (memory.ftk_memory_protect(page_ptr, protect_len, .read_write_execute) != 0) return false;
+
+    const dst: [*]u8 = @ptrCast(address);
+    @memcpy(dst[0..len], backup.head_bak[0..len]);
+    sys_icache_invalidate(address, len);
+
+    _ = memory.ftk_memory_protect(page_ptr, protect_len, .read_execute);
+    return true;
 }
