@@ -5,7 +5,8 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const minhook_root = b.option([]const u8, "minhook-root", "Path to a MinHook source checkout");
     const shadowhook_root = b.option([]const u8, "shadowhook-root", "Path to an android-inline-hook source checkout");
-    const tinyhook_root = b.option([]const u8, "tinyhook-root", "Path to a tinyhook source checkout");
+    const dobby_root = b.option([]const u8, "dobby-root", "Path to a Dobby source checkout");
+    const dobby_lib = b.option([]const u8, "dobby-lib", "Path to a built Dobby static library");
     const lua_root = b.option([]const u8, "lua-root", "Path to a Lua 5.4 source checkout");
     const android_sysroot = b.option([]const u8, "android-sysroot", "Path to the Android NDK sysroot");
     const apple_sysroot = b.option([]const u8, "apple-sysroot", "Path to the Apple SDK sysroot");
@@ -40,6 +41,7 @@ pub fn build(b: *std.Build) void {
             lib.addFrameworkPath(.{ .cwd_relative = b.pathJoin(&.{ path, "System", "Library", "Frameworks" }) });
         }
         lib.linkSystemLibrary("objc");
+        lib.linkSystemLibrary("c++");
         var constructor_flags = std.ArrayList([]const u8).init(b.allocator);
         constructor_flags.appendSlice(&.{ "-std=c11", "-fvisibility=hidden", "-D_DARWIN_C_SOURCE" }) catch @panic("out of memory");
         if (apple_sysroot) |path| {
@@ -73,7 +75,7 @@ pub fn build(b: *std.Build) void {
         apple_sysroot,
         apple_toolchain_include,
     );
-    addHookBackendSources(b, lib, target, minhook_root, shadowhook_root, tinyhook_root, android_sysroot, apple_sysroot, apple_toolchain_include);
+    addHookBackendSources(b, lib, target, minhook_root, shadowhook_root, dobby_root, dobby_lib, android_sysroot);
     b.installArtifact(lib);
 
     const check_step = b.step("check", "Compile the toolkit library");
@@ -183,10 +185,9 @@ fn addHookBackendSources(
     target: std.Build.ResolvedTarget,
     minhook_root: ?[]const u8,
     shadowhook_root: ?[]const u8,
-    tinyhook_root: ?[]const u8,
+    dobby_root: ?[]const u8,
+    dobby_lib: ?[]const u8,
     android_sysroot: ?[]const u8,
-    apple_sysroot: ?[]const u8,
-    apple_toolchain_include: ?[]const u8,
 ) void {
     switch (target.result.os.tag) {
         .windows => {
@@ -194,8 +195,9 @@ fn addHookBackendSources(
             addMinHook(b, lib, root, target);
         },
         .ios, .macos => {
-            const root = tinyhook_root orelse @panic("Apple builds require -Dtinyhook-root=/path/to/tinyhook");
-            addTinyHook(b, lib, root, apple_sysroot, apple_toolchain_include);
+            const root = dobby_root orelse @panic("Apple builds require -Ddobby-root=/path/to/Dobby");
+            const library = dobby_lib orelse @panic("Apple builds require -Ddobby-lib=/path/to/libdobby.a");
+            addDobby(b, lib, root, library);
         },
         .linux => {
             if (isAndroid(target)) {
@@ -290,51 +292,14 @@ fn addShadowHook(b: *std.Build, lib: *std.Build.Step.Compile, root: []const u8, 
     });
 }
 
-fn addTinyHook(
+fn addDobby(
     b: *std.Build,
     lib: *std.Build.Step.Compile,
     root: []const u8,
-    sysroot: ?[]const u8,
-    toolchain_include: ?[]const u8,
+    library: []const u8,
 ) void {
     lib.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ root, "include" }) });
-    lib.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ root, "src" }) });
-
-    const files = [_][]const u8{
-        b.pathJoin(&.{ root, "src", "memory.c" }),
-        b.pathJoin(&.{ root, "src", "tinyhook.c" }),
-        b.pathJoin(&.{ root, "src", "interpose.c" }),
-        b.pathJoin(&.{ root, "src", "symbol.c" }),
-        b.pathJoin(&.{ root, "src", "objcrt.c" }),
-        b.pathJoin(&.{ root, "src", "exhook.c" }),
-    };
-    var flags = std.ArrayList([]const u8).init(b.allocator);
-    flags.appendSlice(&.{
-        "-std=c11",
-        "-fvisibility=hidden",
-        "-Wno-everything",
-    }) catch @panic("out of memory");
-    if (sysroot) |path| {
-        flags.appendSlice(&.{
-            "-isysroot",
-            path,
-            "-isystem",
-            b.pathJoin(&.{ path, "usr", "include" }),
-            "-iframework",
-            b.pathJoin(&.{ path, "System", "Library", "Frameworks" }),
-        }) catch @panic("out of memory");
-    }
-    if (toolchain_include) |path| {
-        flags.appendSlice(&.{
-            "-isystem",
-            path,
-        }) catch @panic("out of memory");
-    }
-
-    lib.addCSourceFiles(.{
-        .files = &files,
-        .flags = flags.items,
-    });
+    lib.addObjectFile(.{ .cwd_relative = library });
 }
 
 fn isAndroid(target: std.Build.ResolvedTarget) bool {

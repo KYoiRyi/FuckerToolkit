@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dlfcn.h>
-#include <tinyhook.h>
+#include <dobby.h>
 
 enum {
     FTK_HOOK_OK = 0,
@@ -16,7 +16,6 @@ enum {
 
 typedef struct {
     void *target;
-    th_bak_t backup;
 } ftk_apple_hook_entry_t;
 
 static ftk_apple_hook_entry_t g_hooks[128];
@@ -100,7 +99,7 @@ int ftk_apple_hook_symbol_smoke_test(const char *symbol) {
     g_symbol_smoke_before = target("12345");
 
     g_last_stage = 300;
-    int rc = tiny_hook(g_symbol_smoke_target, (void *)ftk_detour_atoi, &g_symbol_smoke_original);
+    int rc = DobbyHook(g_symbol_smoke_target, (void *)ftk_detour_atoi, &g_symbol_smoke_original);
     g_last_stage = 301;
     g_symbol_smoke_rc = rc;
     if (rc != 0) return FTK_HOOK_BACKEND_ERROR;
@@ -117,7 +116,8 @@ int ftk_apple_hook_probe_no_trampoline(void *target, void *detour) {
     if (detour == NULL) return FTK_HOOK_INVALID_DETOUR;
 
     g_last_stage = 100;
-    int rc = tiny_hook(target, detour, NULL);
+    void *unused_original = NULL;
+    int rc = DobbyHook(target, detour, &unused_original);
     g_last_stage = 101;
     g_last_probe_rc = rc;
     return rc == 0 ? FTK_HOOK_OK : FTK_HOOK_BACKEND_ERROR;
@@ -137,11 +137,8 @@ int ftk_apple_hook_attach(void *target, void *detour, void **original) {
         return FTK_HOOK_BACKEND_ERROR;
     }
 
-    th_bak_t backup = {0};
-    backup.address = target;
-    backup.jump_size = 0;
     g_last_stage = 200;
-    int rc = tiny_hook(target, detour, original);
+    int rc = DobbyHook(target, detour, original);
     g_last_stage = 201;
     g_last_attach_rc = rc;
     if (rc != 0) {
@@ -149,7 +146,6 @@ int ftk_apple_hook_attach(void *target, void *detour, void **original) {
     }
 
     g_hooks[g_hook_count].target = target;
-    g_hooks[g_hook_count].backup = backup;
     g_hook_count += 1;
     return FTK_HOOK_OK;
 }
@@ -162,7 +158,7 @@ int ftk_apple_hook_detach(void *target) {
             continue;
         }
 
-        int rc = tiny_unhook_ex(&g_hooks[i].backup);
+        int rc = DobbyDestroy(target);
         g_last_detach_rc = rc;
         if (rc != 0) {
             return FTK_HOOK_BACKEND_ERROR;

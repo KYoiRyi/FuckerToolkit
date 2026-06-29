@@ -30,7 +30,7 @@ jobs:
             os: macos-15
             target: aarch64-ios
             artifact: ftk-ios-aarch64
-            backend: tinyhook
+            backend: dobby
 
     steps:
       - name: Checkout
@@ -56,13 +56,13 @@ jobs:
         shell: bash
         run: git clone --depth 1 https://github.com/bytedance/android-inline-hook.git deps/shadowhook
 
-      - name: Fetch tinyhook
-        if: matrix.backend == 'tinyhook'
+      - name: Fetch Dobby
+        if: matrix.backend == 'dobby'
         shell: bash
-        run: git clone --depth 1 https://github.com/Antibioticss/tinyhook.git deps/tinyhook
+        run: git clone --depth 1 https://github.com/jmpews/Dobby.git deps/dobby
 
       - name: Install ldid
-        if: matrix.backend == 'tinyhook'
+        if: matrix.backend == 'dobby'
         shell: bash
         run: brew install ldid
 
@@ -80,11 +80,23 @@ jobs:
               printf 'include_dir=%s/usr/include\nsys_include_dir=%s/usr/include\ncrt_dir=%s/usr/lib/aarch64-linux-android/35\nmsvc_lib_dir=\nkernel32_lib_dir=\ngcc_dir=\n' "$ANDROID_SYSROOT" "$ANDROID_SYSROOT" "$ANDROID_SYSROOT" > android-libc.txt
               zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe -Dlua-root=deps/lua -Dshadowhook-root=deps/shadowhook -Dandroid-sysroot="$ANDROID_SYSROOT" --libc android-libc.txt --summary all
               ;;
-            tinyhook)
+            dobby)
               IOS_SYSROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
               CLANG_PATH="$(xcrun --toolchain XcodeDefault --find clang)"
               TOOLCHAIN_INCLUDE="$(cd "$(dirname "$CLANG_PATH")/.." && pwd)/include"
-              zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe -Dlua-root=deps/lua -Dtinyhook-root=deps/tinyhook -Dapple-sysroot="$IOS_SYSROOT" -Dapple-toolchain-include="$TOOLCHAIN_INCLUDE" --summary all
+              cmake -S deps/dobby -B deps/dobby-build \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_SYSTEM_NAME=iOS \
+                -DCMAKE_OSX_SYSROOT=iphoneos \
+                -DCMAKE_OSX_ARCHITECTURES=arm64 \
+                -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
+                -DDOBBY_GENERATE_SHARED=OFF \
+                -DDOBBY_BUILD_EXAMPLE=OFF \
+                -DDOBBY_BUILD_TEST=OFF
+              cmake --build deps/dobby-build --config Release --target dobby_static --parallel
+              DOBBY_LIB="$(find deps/dobby-build -name 'libdobby.a' -o -name 'libdobby_static.a' | head -n 1)"
+              test -n "$DOBBY_LIB"
+              zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe -Dlua-root=deps/lua -Ddobby-root=deps/dobby -Ddobby-lib="$DOBBY_LIB" -Dapple-sysroot="$IOS_SYSROOT" -Dapple-toolchain-include="$TOOLCHAIN_INCLUDE" --summary all
               ;;
           esac
 
@@ -105,7 +117,7 @@ jobs:
             shadowhook)
               cp zig-out/lib/libftk.so dist/libftk.so
               ;;
-            tinyhook)
+            dobby)
               cp zig-out/lib/libftk.dylib dist/libftk.dylib
               ldid -S dist/libftk.dylib
               otool -l dist/libftk.dylib >/dev/null

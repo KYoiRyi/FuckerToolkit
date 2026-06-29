@@ -152,10 +152,10 @@ pub fn run(allocator: std.mem.Allocator, root: []const u8) !void {
         try log.write(if (attach_status == .ok) .info else .err, message);
     }
     if (isApple()) {
-        const message = try std.fmt.allocPrint(allocator, "hook selftest: tinyhook attach rc={d}", .{ftk_apple_hook_last_attach_rc()});
+        const message = try std.fmt.allocPrint(allocator, "hook selftest: Apple backend attach rc={d}", .{ftk_apple_hook_last_attach_rc()});
         defer allocator.free(message);
         try log.write(.info, message);
-        const stage_message = try std.fmt.allocPrint(allocator, "hook selftest: tinyhook attach stage={d}", .{ftk_apple_hook_last_stage()});
+        const stage_message = try std.fmt.allocPrint(allocator, "hook selftest: Apple backend attach stage={d}", .{ftk_apple_hook_last_stage()});
         defer allocator.free(stage_message);
         try log.write(.info, stage_message);
     }
@@ -181,7 +181,7 @@ pub fn run(allocator: std.mem.Allocator, root: []const u8) !void {
         try log.write(if (detach_status == .ok) .info else .warn, message);
     }
     if (isApple()) {
-        const message = try std.fmt.allocPrint(allocator, "hook selftest: tinyhook detach rc={d}", .{ftk_apple_hook_last_detach_rc()});
+        const message = try std.fmt.allocPrint(allocator, "hook selftest: Apple backend detach rc={d}", .{ftk_apple_hook_last_detach_rc()});
         defer allocator.free(message);
         try log.write(.info, message);
     }

@@ -9,7 +9,7 @@ This repository currently implements:
 - VFS sandboxing under a private local root
 - Lua 5.4 runtime execution of `local://init.lua`
 - file logging to `local://toolkit.log`
-- hook-engine adapters that compile the real MinHook, ShadowHook, and tinyhook backend sources into the platform artifact
+- hook-engine adapters that compile or link real MinHook, ShadowHook, and Dobby backends into the platform artifact
 
 Stealth, anti-detection, and unauthorized third-party process tampering are intentionally not part of this repository. The hook layer is a native in-process detour adapter around established platform libraries.
 
@@ -32,7 +32,7 @@ The default artifact is a shared library for the selected target. Backend source
 ```bash
 zig build -Dtarget=x86_64-windows-msvc -Dminhook-root=deps/minhook
 zig build -Dtarget=aarch64-linux-android -Dshadowhook-root=deps/shadowhook
-zig build -Dtarget=aarch64-ios -Dtinyhook-root=deps/tinyhook
+zig build -Dtarget=aarch64-ios -Ddobby-root=deps/dobby -Ddobby-lib=deps/dobby-build/libdobby.a
 ```
 
 All builds also require Lua 5.4 source files:
@@ -115,5 +115,5 @@ Toolkit.Hook.AutoSmokeTest()
 
 The sample `examples/init_auto_smoke.lua` records the discovered
 `UnityFramework`/`libil2cpp` images, then uses `dlsym(RTLD_DEFAULT, "atoi")`
-and tinyhook to validate that a basic C symbol can be detoured without changing
+and Dobby to validate that a basic C symbol can be detoured without changing
 its return value.
