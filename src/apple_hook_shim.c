@@ -1,4 +1,7 @@
 #include <stddef.h>
+#include <stdlib.h>
+#include <string.h>
+#include <dlfcn.h>
 #include <tinyhook.h>
 
 enum {
@@ -22,6 +25,23 @@ static int g_last_attach_rc = 0;
 static int g_last_detach_rc = 0;
 static int g_last_probe_rc = 0;
 static int g_last_stage = 0;
+static int g_symbol_smoke_rc = 0;
+static int g_symbol_smoke_before = 0;
+static int g_symbol_smoke_after = 0;
+static int g_symbol_smoke_called = 0;
+static void *g_symbol_smoke_target = NULL;
+static void *g_symbol_smoke_original = NULL;
+
+typedef int (*ftk_atoi_fn_t)(const char *);
+
+static int ftk_detour_atoi(const char *value) {
+    g_symbol_smoke_called += 1;
+    ftk_atoi_fn_t original = (ftk_atoi_fn_t)g_symbol_smoke_original;
+    if (original == NULL) {
+        return 0;
+    }
+    return original(value);
+}
 
 int ftk_apple_hook_last_attach_rc(void) {
     return g_last_attach_rc;
@@ -37,6 +57,59 @@ int ftk_apple_hook_last_probe_rc(void) {
 
 int ftk_apple_hook_last_stage(void) {
     return g_last_stage;
+}
+
+int ftk_apple_hook_symbol_smoke_rc(void) {
+    return g_symbol_smoke_rc;
+}
+
+int ftk_apple_hook_symbol_smoke_before(void) {
+    return g_symbol_smoke_before;
+}
+
+int ftk_apple_hook_symbol_smoke_after(void) {
+    return g_symbol_smoke_after;
+}
+
+int ftk_apple_hook_symbol_smoke_called(void) {
+    return g_symbol_smoke_called;
+}
+
+void *ftk_apple_hook_symbol_smoke_target(void) {
+    return g_symbol_smoke_target;
+}
+
+void *ftk_apple_hook_symbol_smoke_original(void) {
+    return g_symbol_smoke_original;
+}
+
+int ftk_apple_hook_symbol_smoke_test(const char *symbol) {
+    if (symbol == NULL) return FTK_HOOK_INVALID_TARGET;
+    if (strcmp(symbol, "atoi") != 0) return FTK_HOOK_INVALID_TARGET;
+
+    g_symbol_smoke_rc = 0;
+    g_symbol_smoke_before = 0;
+    g_symbol_smoke_after = 0;
+    g_symbol_smoke_called = 0;
+    g_symbol_smoke_target = dlsym(RTLD_DEFAULT, symbol);
+    g_symbol_smoke_original = NULL;
+
+    if (g_symbol_smoke_target == NULL) return FTK_HOOK_INVALID_TARGET;
+
+    ftk_atoi_fn_t target = (ftk_atoi_fn_t)g_symbol_smoke_target;
+    g_symbol_smoke_before = target("12345");
+
+    g_last_stage = 300;
+    int rc = tiny_hook(g_symbol_smoke_target, (void *)ftk_detour_atoi, &g_symbol_smoke_original);
+    g_last_stage = 301;
+    g_symbol_smoke_rc = rc;
+    if (rc != 0) return FTK_HOOK_BACKEND_ERROR;
+
+    g_symbol_smoke_after = target("12345");
+    if (g_symbol_smoke_before != 12345) return FTK_HOOK_BACKEND_ERROR;
+    if (g_symbol_smoke_after != 12345) return FTK_HOOK_BACKEND_ERROR;
+    if (g_symbol_smoke_called <= 0) return FTK_HOOK_BACKEND_ERROR;
+    return FTK_HOOK_OK;
 }
 
 int ftk_apple_hook_probe_no_trampoline(void *target, void *detour) {

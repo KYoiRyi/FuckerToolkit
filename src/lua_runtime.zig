@@ -2,6 +2,8 @@ const std = @import("std");
 const image = @import("image.zig");
 const logger = @import("logger.zig");
 const hook_selftest = @import("hook_selftest.zig");
+const hook = @import("hook.zig");
+const builtin = @import("builtin");
 
 const LUA_OK: c_int = 0;
 const LUA_MULTRET: c_int = -1;
@@ -92,9 +94,11 @@ pub const Context = struct {
         lua_setfield(self.state, -2, "DiagnoseRva");
         lua_setfield(self.state, -2, "Image");
 
-        lua_createtable(self.state, 0, 1);
+        lua_createtable(self.state, 0, 2);
         lua_pushcclosure(self.state, luaHookSelfTest, 0);
         lua_setfield(self.state, -2, "SelfTest");
+        lua_pushcclosure(self.state, luaHookAutoSmokeTest, 0);
+        lua_setfield(self.state, -2, "AutoSmokeTest");
         lua_setfield(self.state, -2, "Hook");
 
         lua_setglobal(self.state, "Toolkit");
@@ -284,4 +288,98 @@ fn luaHookSelfTest(L: ?*LuaState) callconv(.c) c_int {
         return 0;
     };
     return 0;
+}
+
+extern fn ftk_apple_hook_symbol_smoke_test(symbol: [*:0]const u8) callconv(.c) c_int;
+extern fn ftk_apple_hook_symbol_smoke_rc() callconv(.c) c_int;
+extern fn ftk_apple_hook_symbol_smoke_before() callconv(.c) c_int;
+extern fn ftk_apple_hook_symbol_smoke_after() callconv(.c) c_int;
+extern fn ftk_apple_hook_symbol_smoke_called() callconv(.c) c_int;
+extern fn ftk_apple_hook_symbol_smoke_target() callconv(.c) ?*anyopaque;
+extern fn ftk_apple_hook_symbol_smoke_original() callconv(.c) ?*anyopaque;
+extern fn ftk_apple_hook_last_stage() callconv(.c) c_int;
+
+fn statusName(status: hook.Status) []const u8 {
+    return switch (status) {
+        .ok => "ok",
+        .invalid_target => "invalid_target",
+        .invalid_detour => "invalid_detour",
+        .invalid_original => "invalid_original",
+        .already_attached => "already_attached",
+        .not_attached => "not_attached",
+        .backend_error => "backend_error",
+    };
+}
+
+fn statusFromInt(value: c_int) hook.Status {
+    return switch (value) {
+        0 => .ok,
+        1 => .invalid_target,
+        2 => .invalid_detour,
+        3 => .invalid_original,
+        4 => .already_attached,
+        5 => .not_attached,
+        else => .backend_error,
+    };
+}
+
+fn logImageIfPresent(allocator: std.mem.Allocator, name: []const u8) void {
+    const info = image.findByNameContains(name) orelse {
+        const missing = std.fmt.allocPrint(allocator, "auto smoke: image not found: {s}", .{name}) catch return;
+        defer allocator.free(missing);
+        logger.writeDefault(allocator, .warn, missing) catch {};
+        return;
+    };
+    const message = std.fmt.allocPrint(
+        allocator,
+        "auto smoke: image found name={s} index={d} base=0x{x}",
+        .{ info.name, info.index, info.base },
+    ) catch return;
+    defer allocator.free(message);
+    logger.writeDefault(allocator, .info, message) catch {};
+}
+
+fn luaHookAutoSmokeTest(L: ?*LuaState) callconv(.c) c_int {
+    const state = L orelse return 0;
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    logger.writeDefault(allocator, .info, "auto smoke: begin") catch {};
+    logImageIfPresent(allocator, "UnityFramework");
+    logImageIfPresent(allocator, "libil2cpp");
+
+    if (builtin.os.tag != .ios and builtin.os.tag != .macos) {
+        logger.writeDefault(allocator, .warn, "auto smoke: currently implemented for Apple targets") catch {};
+        lua_pushboolean(state, 0);
+        return 1;
+    }
+
+    logger.writeDefault(allocator, .info, "auto smoke: trying dlsym/tiny_hook symbol=atoi") catch {};
+    const status = statusFromInt(ftk_apple_hook_symbol_smoke_test("atoi"));
+    const target = ftk_apple_hook_symbol_smoke_target();
+    const original = ftk_apple_hook_symbol_smoke_original();
+    const message = std.fmt.allocPrint(
+        allocator,
+        "auto smoke: symbol=atoi status={s} rc={d} stage={d} target=0x{x} original=0x{x} before={d} after={d} called={d}",
+        .{
+            statusName(status),
+            ftk_apple_hook_symbol_smoke_rc(),
+            ftk_apple_hook_last_stage(),
+            if (target) |ptr| @intFromPtr(ptr) else 0,
+            if (original) |ptr| @intFromPtr(ptr) else 0,
+            ftk_apple_hook_symbol_smoke_before(),
+            ftk_apple_hook_symbol_smoke_after(),
+            ftk_apple_hook_symbol_smoke_called(),
+        },
+    ) catch {
+        lua_pushboolean(state, 0);
+        return 1;
+    };
+    defer allocator.free(message);
+    logger.writeDefault(allocator, if (status == .ok) .info else .err, message) catch {};
+    logger.writeDefault(allocator, .info, "auto smoke: end") catch {};
+
+    lua_pushboolean(state, if (status == .ok) 1 else 0);
+    return 1;
 }

@@ -106,3 +106,14 @@ local bytes2 = Toolkit.Memory.ReadBytes(resolved, 16)
 To run the diagnostic sample, copy `examples/init_image_diagnose.lua` to
 `Documents/FuckerToolkit/init.lua`, set `image_name` and `rva`, then check
 `toolkit.log`.
+
+iOS automatic smoke test:
+
+```lua
+Toolkit.Hook.AutoSmokeTest()
+```
+
+The sample `examples/init_auto_smoke.lua` records the discovered
+`UnityFramework`/`libil2cpp` images, then uses `dlsym(RTLD_DEFAULT, "atoi")`
+and tinyhook to validate that a basic C symbol can be detoured without changing
+its return value.
