@@ -30,20 +30,15 @@ static int g_symbol_smoke_after = 0;
 static int g_symbol_smoke_called = 0;
 static void *g_symbol_smoke_target = NULL;
 static void *g_symbol_smoke_original = NULL;
+static const char *g_symbol_smoke_name = "";
 
-typedef int (*ftk_atoi_fn_t)(const char *);
-typedef int (*ftk_probe_fn_t)(void);
+typedef void *(*ftk_il2cpp_domain_get_fn_t)(void);
 
-extern int ftk_selftest_probe_target(void);
-extern int ftk_selftest_probe_detour(void);
-
-static int ftk_detour_atoi(const char *value) {
+static void *ftk_detour_il2cpp_domain_get(void) {
     g_symbol_smoke_called += 1;
-    ftk_atoi_fn_t original = (ftk_atoi_fn_t)g_symbol_smoke_original;
-    if (original == NULL) {
-        return 0;
-    }
-    return original(value);
+    ftk_il2cpp_domain_get_fn_t original = (ftk_il2cpp_domain_get_fn_t)g_symbol_smoke_original;
+    if (original == NULL) return NULL;
+    return original();
 }
 
 int ftk_apple_hook_last_attach_rc(void) {
@@ -86,6 +81,63 @@ void *ftk_apple_hook_symbol_smoke_original(void) {
     return g_symbol_smoke_original;
 }
 
+const char *ftk_apple_hook_symbol_smoke_name(void) {
+    return g_symbol_smoke_name;
+}
+
+static void *ftk_resolve_il2cpp_symbol(const char *symbol) {
+    void *addr = DobbySymbolResolver("UnityFramework", symbol);
+    if (addr != NULL) return addr;
+    addr = DobbySymbolResolver(NULL, symbol);
+    if (addr != NULL) return addr;
+    return dlsym(RTLD_DEFAULT, symbol);
+}
+
+static int ftk_apple_hook_il2cpp_reflection_smoke(void) {
+    const char *symbol = "il2cpp_domain_get";
+    void *addr = ftk_resolve_il2cpp_symbol(symbol);
+    if (addr == NULL) {
+        const char *candidates[] = {
+            "il2cpp_domain_get_assemblies",
+            "il2cpp_assembly_get_image",
+            "il2cpp_image_get_class_count",
+            "il2cpp_image_get_class",
+            "il2cpp_class_get_name",
+            "il2cpp_class_get_namespace",
+            "il2cpp_class_get_methods",
+            "il2cpp_method_get_name",
+        };
+        for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); ++i) {
+            addr = ftk_resolve_il2cpp_symbol(candidates[i]);
+            if (addr != NULL) {
+                g_symbol_smoke_name = candidates[i];
+                g_symbol_smoke_target = addr;
+                g_symbol_smoke_before = 1;
+                g_symbol_smoke_after = 0;
+                return FTK_HOOK_NOT_ATTACHED;
+            }
+        }
+        return FTK_HOOK_INVALID_TARGET;
+    }
+
+    g_symbol_smoke_name = symbol;
+    g_symbol_smoke_target = addr;
+    ftk_il2cpp_domain_get_fn_t target = (ftk_il2cpp_domain_get_fn_t)addr;
+    void *before = target();
+    g_symbol_smoke_before = before != NULL ? 1 : 0;
+
+    g_last_stage = 600;
+    int rc = DobbyHook(addr, (void *)ftk_detour_il2cpp_domain_get, &g_symbol_smoke_original);
+    g_last_stage = 601;
+    g_symbol_smoke_rc = rc;
+    if (rc != 0) return FTK_HOOK_BACKEND_ERROR;
+
+    void *after = target();
+    g_symbol_smoke_after = after != NULL ? 1 : 0;
+    if (g_symbol_smoke_called <= 0) return FTK_HOOK_BACKEND_ERROR;
+    return FTK_HOOK_OK;
+}
+
 int ftk_apple_hook_symbol_smoke_test(const char *symbol) {
     if (symbol == NULL) return FTK_HOOK_INVALID_TARGET;
 
@@ -94,43 +146,11 @@ int ftk_apple_hook_symbol_smoke_test(const char *symbol) {
     g_symbol_smoke_after = 0;
     g_symbol_smoke_called = 0;
     g_symbol_smoke_original = NULL;
+    g_symbol_smoke_target = NULL;
+    g_symbol_smoke_name = symbol;
 
-    if (strcmp(symbol, "local_probe") == 0) {
-        g_symbol_smoke_target = (void *)ftk_selftest_probe_target;
-        ftk_probe_fn_t target = (ftk_probe_fn_t)g_symbol_smoke_target;
-        g_symbol_smoke_before = target();
-
-        g_last_stage = 300;
-        int rc = DobbyHook(g_symbol_smoke_target, (void *)ftk_selftest_probe_detour, &g_symbol_smoke_original);
-        g_last_stage = 301;
-        g_symbol_smoke_rc = rc;
-        if (rc != 0) return FTK_HOOK_BACKEND_ERROR;
-
-        g_symbol_smoke_after = target();
-        g_symbol_smoke_called = g_symbol_smoke_after == 22 ? 1 : 0;
-        if (g_symbol_smoke_before != 11) return FTK_HOOK_BACKEND_ERROR;
-        if (g_symbol_smoke_after != 22) return FTK_HOOK_BACKEND_ERROR;
-        return FTK_HOOK_OK;
-    }
-
-    if (strcmp(symbol, "atoi") == 0) {
-        g_symbol_smoke_target = dlsym(RTLD_DEFAULT, symbol);
-        if (g_symbol_smoke_target == NULL) return FTK_HOOK_INVALID_TARGET;
-
-        ftk_atoi_fn_t target = (ftk_atoi_fn_t)g_symbol_smoke_target;
-        g_symbol_smoke_before = target("12345");
-
-        g_last_stage = 400;
-        int rc = DobbyHook(g_symbol_smoke_target, (void *)ftk_detour_atoi, &g_symbol_smoke_original);
-        g_last_stage = 401;
-        g_symbol_smoke_rc = rc;
-        if (rc != 0) return FTK_HOOK_BACKEND_ERROR;
-
-        g_symbol_smoke_after = target("12345");
-        if (g_symbol_smoke_before != 12345) return FTK_HOOK_BACKEND_ERROR;
-        if (g_symbol_smoke_after != 12345) return FTK_HOOK_BACKEND_ERROR;
-        if (g_symbol_smoke_called <= 0) return FTK_HOOK_BACKEND_ERROR;
-        return FTK_HOOK_OK;
+    if (strcmp(symbol, "il2cpp_reflection") == 0) {
+        return ftk_apple_hook_il2cpp_reflection_smoke();
     }
 
     return FTK_HOOK_INVALID_TARGET;

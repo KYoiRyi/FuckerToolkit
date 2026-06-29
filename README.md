@@ -114,7 +114,8 @@ Toolkit.Hook.AutoSmokeTest()
 ```
 
 The sample `examples/init_auto_smoke.lua` records the discovered
-`UnityFramework`/`libil2cpp` images, then uses Dobby to detour a tiny local
-probe function. Shared-cache system symbols such as `atoi` are not used by the
-default smoke test because some LiveContainer environments reject that patch
-path.
+`UnityFramework`/`libil2cpp` images, then uses Dobby to detour
+`il2cpp_domain_get` when that IL2CPP reflection export is available. The detour
+only increments a counter and forwards to the original implementation. If
+`il2cpp_domain_get` is not exported, the smoke test logs the first available
+basic IL2CPP reflection export from a conservative candidate list.
