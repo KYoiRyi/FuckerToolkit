@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include <dlfcn.h>
 #include <dobby.h>
 
@@ -31,14 +32,79 @@ static int g_symbol_smoke_called = 0;
 static void *g_symbol_smoke_target = NULL;
 static void *g_symbol_smoke_original = NULL;
 static const char *g_symbol_smoke_name = "";
+static char g_symbol_smoke_bytes[64] = "";
 
 typedef void *(*ftk_il2cpp_domain_get_fn_t)(void);
+typedef void **(*ftk_il2cpp_domain_get_assemblies_fn_t)(const void *, size_t *);
+typedef void *(*ftk_il2cpp_assembly_get_image_fn_t)(const void *);
+typedef size_t (*ftk_il2cpp_image_get_class_count_fn_t)(const void *);
+typedef void *(*ftk_il2cpp_image_get_class_fn_t)(const void *, size_t);
+typedef const char *(*ftk_il2cpp_class_get_name_fn_t)(const void *);
+typedef const char *(*ftk_il2cpp_class_get_namespace_fn_t)(const void *);
+typedef void *(*ftk_il2cpp_class_get_methods_fn_t)(void *, void **);
+typedef const char *(*ftk_il2cpp_method_get_name_fn_t)(const void *);
 
 static void *ftk_detour_il2cpp_domain_get(void) {
     g_symbol_smoke_called += 1;
     ftk_il2cpp_domain_get_fn_t original = (ftk_il2cpp_domain_get_fn_t)g_symbol_smoke_original;
     if (original == NULL) return NULL;
     return original();
+}
+
+static void **ftk_detour_il2cpp_domain_get_assemblies(const void *domain, size_t *size) {
+    g_symbol_smoke_called += 1;
+    ftk_il2cpp_domain_get_assemblies_fn_t original = (ftk_il2cpp_domain_get_assemblies_fn_t)g_symbol_smoke_original;
+    if (original == NULL) return NULL;
+    return original(domain, size);
+}
+
+static void *ftk_detour_il2cpp_assembly_get_image(const void *assembly) {
+    g_symbol_smoke_called += 1;
+    ftk_il2cpp_assembly_get_image_fn_t original = (ftk_il2cpp_assembly_get_image_fn_t)g_symbol_smoke_original;
+    if (original == NULL) return NULL;
+    return original(assembly);
+}
+
+static size_t ftk_detour_il2cpp_image_get_class_count(const void *image) {
+    g_symbol_smoke_called += 1;
+    ftk_il2cpp_image_get_class_count_fn_t original = (ftk_il2cpp_image_get_class_count_fn_t)g_symbol_smoke_original;
+    if (original == NULL) return 0;
+    return original(image);
+}
+
+static void *ftk_detour_il2cpp_image_get_class(const void *image, size_t index) {
+    g_symbol_smoke_called += 1;
+    ftk_il2cpp_image_get_class_fn_t original = (ftk_il2cpp_image_get_class_fn_t)g_symbol_smoke_original;
+    if (original == NULL) return NULL;
+    return original(image, index);
+}
+
+static const char *ftk_detour_il2cpp_class_get_name(const void *klass) {
+    g_symbol_smoke_called += 1;
+    ftk_il2cpp_class_get_name_fn_t original = (ftk_il2cpp_class_get_name_fn_t)g_symbol_smoke_original;
+    if (original == NULL) return NULL;
+    return original(klass);
+}
+
+static const char *ftk_detour_il2cpp_class_get_namespace(const void *klass) {
+    g_symbol_smoke_called += 1;
+    ftk_il2cpp_class_get_namespace_fn_t original = (ftk_il2cpp_class_get_namespace_fn_t)g_symbol_smoke_original;
+    if (original == NULL) return NULL;
+    return original(klass);
+}
+
+static void *ftk_detour_il2cpp_class_get_methods(void *klass, void **iter) {
+    g_symbol_smoke_called += 1;
+    ftk_il2cpp_class_get_methods_fn_t original = (ftk_il2cpp_class_get_methods_fn_t)g_symbol_smoke_original;
+    if (original == NULL) return NULL;
+    return original(klass, iter);
+}
+
+static const char *ftk_detour_il2cpp_method_get_name(const void *method) {
+    g_symbol_smoke_called += 1;
+    ftk_il2cpp_method_get_name_fn_t original = (ftk_il2cpp_method_get_name_fn_t)g_symbol_smoke_original;
+    if (original == NULL) return NULL;
+    return original(method);
 }
 
 int ftk_apple_hook_last_attach_rc(void) {
@@ -85,6 +151,24 @@ const char *ftk_apple_hook_symbol_smoke_name(void) {
     return g_symbol_smoke_name;
 }
 
+const char *ftk_apple_hook_symbol_smoke_bytes(void) {
+    return g_symbol_smoke_bytes;
+}
+
+static void ftk_capture_smoke_bytes(const void *addr) {
+    const unsigned char *bytes = (const unsigned char *)addr;
+    char *out = g_symbol_smoke_bytes;
+    size_t left = sizeof(g_symbol_smoke_bytes);
+    g_symbol_smoke_bytes[0] = '\0';
+
+    for (size_t i = 0; i < 16 && left > 1; ++i) {
+        int written = snprintf(out, left, i == 0 ? "%02x" : " %02x", bytes[i]);
+        if (written <= 0 || (size_t)written >= left) break;
+        out += written;
+        left -= (size_t)written;
+    }
+}
+
 static void *ftk_resolve_il2cpp_symbol(const char *symbol) {
     void *addr = DobbySymbolResolver("UnityFramework", symbol);
     if (addr != NULL) return addr;
@@ -93,54 +177,52 @@ static void *ftk_resolve_il2cpp_symbol(const char *symbol) {
     return dlsym(RTLD_DEFAULT, symbol);
 }
 
+typedef struct {
+    const char *name;
+    void *detour;
+} ftk_il2cpp_candidate_t;
+
 static int ftk_apple_hook_il2cpp_reflection_smoke(void) {
-    const char *symbol = "il2cpp_domain_get";
-    void *addr = ftk_resolve_il2cpp_symbol(symbol);
-    if (addr == NULL) {
-        const char *candidates[] = {
-            "il2cpp_domain_get_assemblies",
-            "il2cpp_assembly_get_image",
-            "il2cpp_image_get_class_count",
-            "il2cpp_image_get_class",
-            "il2cpp_class_get_name",
-            "il2cpp_class_get_namespace",
-            "il2cpp_class_get_methods",
-            "il2cpp_method_get_name",
-        };
-        for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); ++i) {
-            addr = ftk_resolve_il2cpp_symbol(candidates[i]);
-            if (addr != NULL) {
-                g_symbol_smoke_name = candidates[i];
-                g_symbol_smoke_target = addr;
-                g_symbol_smoke_before = 1;
-                g_symbol_smoke_after = 0;
-                return FTK_HOOK_NOT_ATTACHED;
-            }
+    const ftk_il2cpp_candidate_t candidates[] = {
+        { "il2cpp_class_get_name", (void *)ftk_detour_il2cpp_class_get_name },
+        { "il2cpp_method_get_name", (void *)ftk_detour_il2cpp_method_get_name },
+        { "il2cpp_class_get_namespace", (void *)ftk_detour_il2cpp_class_get_namespace },
+        { "il2cpp_class_get_methods", (void *)ftk_detour_il2cpp_class_get_methods },
+        { "il2cpp_image_get_class_count", (void *)ftk_detour_il2cpp_image_get_class_count },
+        { "il2cpp_image_get_class", (void *)ftk_detour_il2cpp_image_get_class },
+        { "il2cpp_assembly_get_image", (void *)ftk_detour_il2cpp_assembly_get_image },
+        { "il2cpp_domain_get_assemblies", (void *)ftk_detour_il2cpp_domain_get_assemblies },
+        { "il2cpp_domain_get", (void *)ftk_detour_il2cpp_domain_get },
+    };
+
+    for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); ++i) {
+        void *addr = ftk_resolve_il2cpp_symbol(candidates[i].name);
+        if (addr == NULL) {
+            continue;
         }
-        return FTK_HOOK_INVALID_TARGET;
+
+        g_symbol_smoke_name = candidates[i].name;
+        g_symbol_smoke_target = addr;
+        g_symbol_smoke_before = 1;
+        ftk_capture_smoke_bytes(addr);
+
+        g_last_stage = 700 + (int)i;
+        int rc = DobbyHook(addr, candidates[i].detour, &g_symbol_smoke_original);
+        g_last_stage = 800 + (int)i;
+        g_symbol_smoke_rc = rc;
+        if (rc != 0) return FTK_HOOK_BACKEND_ERROR;
+
+        g_symbol_smoke_after = 1;
+        return FTK_HOOK_OK;
     }
 
-    g_symbol_smoke_name = symbol;
-    g_symbol_smoke_target = addr;
-    ftk_il2cpp_domain_get_fn_t target = (ftk_il2cpp_domain_get_fn_t)addr;
-    void *before = target();
-    g_symbol_smoke_before = before != NULL ? 1 : 0;
-
-    g_last_stage = 600;
-    int rc = DobbyHook(addr, (void *)ftk_detour_il2cpp_domain_get, &g_symbol_smoke_original);
-    g_last_stage = 601;
-    g_symbol_smoke_rc = rc;
-    if (rc != 0) return FTK_HOOK_BACKEND_ERROR;
-
-    void *after = target();
-    g_symbol_smoke_after = after != NULL ? 1 : 0;
-    if (g_symbol_smoke_called <= 0) return FTK_HOOK_BACKEND_ERROR;
-    return FTK_HOOK_OK;
+    return FTK_HOOK_INVALID_TARGET;
 }
 
 int ftk_apple_hook_symbol_smoke_test(const char *symbol) {
     if (symbol == NULL) return FTK_HOOK_INVALID_TARGET;
 
+    g_last_stage = 0;
     g_symbol_smoke_rc = 0;
     g_symbol_smoke_before = 0;
     g_symbol_smoke_after = 0;
@@ -148,6 +230,7 @@ int ftk_apple_hook_symbol_smoke_test(const char *symbol) {
     g_symbol_smoke_original = NULL;
     g_symbol_smoke_target = NULL;
     g_symbol_smoke_name = symbol;
+    g_symbol_smoke_bytes[0] = '\0';
 
     if (strcmp(symbol, "il2cpp_reflection") == 0) {
         return ftk_apple_hook_il2cpp_reflection_smoke();

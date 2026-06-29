@@ -298,6 +298,7 @@ extern fn ftk_apple_hook_symbol_smoke_called() callconv(.c) c_int;
 extern fn ftk_apple_hook_symbol_smoke_target() callconv(.c) ?*anyopaque;
 extern fn ftk_apple_hook_symbol_smoke_original() callconv(.c) ?*anyopaque;
 extern fn ftk_apple_hook_symbol_smoke_name() callconv(.c) ?[*:0]const u8;
+extern fn ftk_apple_hook_symbol_smoke_bytes() callconv(.c) ?[*:0]const u8;
 extern fn ftk_apple_hook_last_stage() callconv(.c) c_int;
 
 fn statusName(status: hook.Status) []const u8 {
@@ -362,9 +363,11 @@ fn luaHookAutoSmokeTest(L: ?*LuaState) callconv(.c) c_int {
     const original = ftk_apple_hook_symbol_smoke_original();
     const name_ptr = ftk_apple_hook_symbol_smoke_name();
     const name = if (name_ptr) |ptr| std.mem.span(ptr) else "unknown";
+    const bytes_ptr = ftk_apple_hook_symbol_smoke_bytes();
+    const bytes = if (bytes_ptr) |ptr| std.mem.span(ptr) else "";
     const message = std.fmt.allocPrint(
         allocator,
-        "auto smoke: target=il2cpp symbol={s} status={s} rc={d} stage={d} address=0x{x} original=0x{x} before={d} after={d} called={d}",
+        "auto smoke: target=il2cpp symbol={s} status={s} rc={d} stage={d} address=0x{x} original=0x{x} before={d} after={d} called={d} bytes={s}",
         .{
             name,
             statusName(status),
@@ -375,6 +378,7 @@ fn luaHookAutoSmokeTest(L: ?*LuaState) callconv(.c) c_int {
             ftk_apple_hook_symbol_smoke_before(),
             ftk_apple_hook_symbol_smoke_after(),
             ftk_apple_hook_symbol_smoke_called(),
+            bytes,
         },
     ) catch {
         lua_pushboolean(state, 0);

@@ -114,8 +114,10 @@ Toolkit.Hook.AutoSmokeTest()
 ```
 
 The sample `examples/init_auto_smoke.lua` records the discovered
-`UnityFramework`/`libil2cpp` images, then uses Dobby to detour
-`il2cpp_domain_get` when that IL2CPP reflection export is available. The detour
-only increments a counter and forwards to the original implementation. If
-`il2cpp_domain_get` is not exported, the smoke test logs the first available
-basic IL2CPP reflection export from a conservative candidate list.
+`UnityFramework`/`libil2cpp` images, then uses Dobby to detour the first
+available basic IL2CPP reflection export from a conservative candidate list
+(`il2cpp_class_get_name`, `il2cpp_method_get_name`, and related reflection
+helpers). The detour only increments a counter and forwards to the original
+implementation. The smoke test does not invoke the target after attaching; it
+logs the selected symbol, address, original trampoline, Dobby return code, stage,
+and the first 16 bytes at the target entry.
