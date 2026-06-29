@@ -7,6 +7,8 @@ var original_add: ?*anyopaque = null;
 
 extern fn ftk_selftest_target_add(a: c_int, b: c_int) callconv(.c) c_int;
 extern fn ftk_selftest_detour_add(a: c_int, b: c_int) callconv(.c) c_int;
+extern fn ftk_apple_hook_last_attach_rc() callconv(.c) c_int;
+extern fn ftk_apple_hook_last_detach_rc() callconv(.c) c_int;
 
 fn statusName(status: hook.Status) []const u8 {
     return switch (status) {
@@ -84,6 +86,11 @@ pub fn run(allocator: std.mem.Allocator, root: []const u8) !void {
         defer allocator.free(message);
         try log.write(if (attach_status == .ok) .info else .err, message);
     }
+    if (isApple()) {
+        const message = try std.fmt.allocPrint(allocator, "hook selftest: tinyhook attach rc={d}", .{ftk_apple_hook_last_attach_rc()});
+        defer allocator.free(message);
+        try log.write(.info, message);
+    }
     if (attach_status != .ok and attach_status != .already_attached) return error.HookSelfTestAttachFailed;
     try logBytes(allocator, &log, "target after attach", target_ptr);
 
@@ -104,6 +111,11 @@ pub fn run(allocator: std.mem.Allocator, root: []const u8) !void {
         const message = try std.fmt.allocPrint(allocator, "hook selftest: detach status={s}", .{statusName(detach_status)});
         defer allocator.free(message);
         try log.write(if (detach_status == .ok) .info else .warn, message);
+    }
+    if (isApple()) {
+        const message = try std.fmt.allocPrint(allocator, "hook selftest: tinyhook detach rc={d}", .{ftk_apple_hook_last_detach_rc()});
+        defer allocator.free(message);
+        try log.write(.info, message);
     }
     try logBytes(allocator, &log, "target after detach", target_ptr);
 

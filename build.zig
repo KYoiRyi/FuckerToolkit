@@ -59,6 +59,10 @@ pub fn build(b: *std.Build) void {
             .file = b.path("src/apple_constructor.c"),
             .flags = constructor_flags.items,
         });
+        lib.addCSourceFile(.{
+            .file = b.path("src/apple_hook_shim.c"),
+            .flags = constructor_flags.items,
+        });
     }
     addLuaSources(
         b,
