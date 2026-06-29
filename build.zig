@@ -39,6 +39,8 @@ pub fn build(b: *std.Build) void {
         if (apple_sysroot) |path| {
             lib.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ path, "usr", "lib" }) });
             lib.addFrameworkPath(.{ .cwd_relative = b.pathJoin(&.{ path, "System", "Library", "Frameworks" }) });
+            lib.addObjectFile(.{ .cwd_relative = b.pathJoin(&.{ path, "usr", "lib", "libc++.tbd" }) });
+            lib.addObjectFile(.{ .cwd_relative = b.pathJoin(&.{ path, "usr", "lib", "libc++abi.tbd" }) });
         }
         lib.linkSystemLibrary("objc");
         var constructor_flags = std.ArrayList([]const u8).init(b.allocator);
