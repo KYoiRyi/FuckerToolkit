@@ -88,6 +88,21 @@ Toolkit.Hook.SelfTest()
 ```
 
 To run the verbose sample, copy `examples/init_hook_selftest.lua` to
-`Documents/FuckerToolkit/init.lua`. It hooks an internal native test function,
-checks the detour result, detaches it, and writes detailed status lines to
+`Documents/FuckerToolkit/init.lua`. On Windows and Android it hooks an internal
+native test function, checks the detour result, detaches it, and writes detailed
+status lines to `toolkit.log`. On iOS/LiveContainer the self-hook is skipped
+because patching the injected dylib text page can terminate the host before the
+backend returns.
+
+Image/RVA diagnostics for iOS:
+
+```lua
+local base = Toolkit.Image.Base("UnityFramework")
+local address = Toolkit.Image.Address("UnityFramework", 0x1234)
+local ok, resolved, bytes = Toolkit.Image.DiagnoseRva("UnityFramework", 0x1234, 16)
+local bytes2 = Toolkit.Memory.ReadBytes(resolved, 16)
+```
+
+To run the diagnostic sample, copy `examples/init_image_diagnose.lua` to
+`Documents/FuckerToolkit/init.lua`, set `image_name` and `rva`, then check
 `toolkit.log`.

@@ -1,4 +1,5 @@
 const std = @import("std");
+const image = @import("image.zig");
 const logger = @import("logger.zig");
 const hook_selftest = @import("hook_selftest.zig");
 
@@ -15,10 +16,14 @@ extern fn luaL_loadfilex(L: *LuaState, filename: [*:0]const u8, mode: ?[*:0]cons
 extern fn lua_pcallk(L: *LuaState, nargs: c_int, nresults: c_int, msgh: c_int, ctx: isize, k: ?*anyopaque) callconv(.c) c_int;
 extern fn lua_tolstring(L: *LuaState, index: c_int, len: ?*usize) callconv(.c) ?[*]const u8;
 extern fn luaL_checklstring(L: *LuaState, index: c_int, len: ?*usize) callconv(.c) [*]const u8;
+extern fn luaL_checkinteger(L: *LuaState, index: c_int) callconv(.c) isize;
 extern fn lua_gettop(L: *LuaState) callconv(.c) c_int;
 extern fn lua_settop(L: *LuaState, index: c_int) callconv(.c) void;
 extern fn lua_pushcclosure(L: *LuaState, function: LuaCFunction, n: c_int) callconv(.c) void;
 extern fn lua_pushlstring(L: *LuaState, s: [*]const u8, len: usize) callconv(.c) void;
+extern fn lua_pushinteger(L: *LuaState, n: isize) callconv(.c) void;
+extern fn lua_pushnil(L: *LuaState) callconv(.c) void;
+extern fn lua_pushboolean(L: *LuaState, b: c_int) callconv(.c) void;
 extern fn lua_pushvalue(L: *LuaState, index: c_int) callconv(.c) void;
 extern fn lua_createtable(L: *LuaState, narr: c_int, nrec: c_int) callconv(.c) void;
 extern fn lua_setfield(L: *LuaState, index: c_int, key: [*:0]const u8) callconv(.c) void;
@@ -61,7 +66,7 @@ pub const Context = struct {
     }
 
     fn registerToolkit(self: *Context) void {
-        lua_createtable(self.state, 0, 2);
+        lua_createtable(self.state, 0, 4);
         lua_createtable(self.state, 0, 3);
 
         lua_pushcclosure(self.state, luaLogInfo, 0);
@@ -72,6 +77,20 @@ pub const Context = struct {
         lua_setfield(self.state, -2, "error");
 
         lua_setfield(self.state, -2, "Log");
+
+        lua_createtable(self.state, 0, 1);
+        lua_pushcclosure(self.state, luaMemoryReadBytes, 0);
+        lua_setfield(self.state, -2, "ReadBytes");
+        lua_setfield(self.state, -2, "Memory");
+
+        lua_createtable(self.state, 0, 3);
+        lua_pushcclosure(self.state, luaImageBase, 0);
+        lua_setfield(self.state, -2, "Base");
+        lua_pushcclosure(self.state, luaImageAddress, 0);
+        lua_setfield(self.state, -2, "Address");
+        lua_pushcclosure(self.state, luaImageDiagnoseRva, 0);
+        lua_setfield(self.state, -2, "DiagnoseRva");
+        lua_setfield(self.state, -2, "Image");
 
         lua_createtable(self.state, 0, 1);
         lua_pushcclosure(self.state, luaHookSelfTest, 0);
@@ -133,6 +152,118 @@ fn luaLogError(L: ?*LuaState) callconv(.c) c_int {
 
 fn luaPrint(L: ?*LuaState) callconv(.c) c_int {
     return writeLuaMessage(L, .info, 1);
+}
+
+fn readLuaString(state: *LuaState, index: c_int) []const u8 {
+    var len: usize = 0;
+    const raw = luaL_checklstring(state, index, &len);
+    return raw[0..len];
+}
+
+fn checkedAddress(value: isize) ?usize {
+    if (value <= 0) return null;
+    return @intCast(value);
+}
+
+fn luaMemoryReadBytes(L: ?*LuaState) callconv(.c) c_int {
+    const state = L orelse return 0;
+    const address = checkedAddress(luaL_checkinteger(state, 1)) orelse {
+        lua_pushnil(state);
+        return 1;
+    };
+    const requested = luaL_checkinteger(state, 2);
+    if (requested <= 0 or requested > 64) {
+        lua_pushnil(state);
+        return 1;
+    }
+
+    const len: usize = @intCast(requested);
+    const bytes: [*]const u8 = @ptrFromInt(address);
+
+    var buffer: [64 * 3]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buffer);
+    for (bytes[0..len], 0..) |byte, index| {
+        if (index != 0) stream.writer().writeByte(' ') catch return 0;
+        stream.writer().print("{x:0>2}", .{byte}) catch return 0;
+    }
+    const out = stream.getWritten();
+    lua_pushlstring(state, out.ptr, out.len);
+    return 1;
+}
+
+fn luaImageBase(L: ?*LuaState) callconv(.c) c_int {
+    const state = L orelse return 0;
+    const name = readLuaString(state, 1);
+    const info = image.findByNameContains(name) orelse {
+        lua_pushnil(state);
+        return 1;
+    };
+    lua_pushinteger(state, @intCast(info.base));
+    return 1;
+}
+
+fn luaImageAddress(L: ?*LuaState) callconv(.c) c_int {
+    const state = L orelse return 0;
+    const name = readLuaString(state, 1);
+    const rva_value = luaL_checkinteger(state, 2);
+    if (rva_value < 0) {
+        lua_pushnil(state);
+        return 1;
+    }
+    const address = image.resolveRva(name, @intCast(rva_value)) orelse {
+        lua_pushnil(state);
+        return 1;
+    };
+    lua_pushinteger(state, @intCast(address));
+    return 1;
+}
+
+fn luaImageDiagnoseRva(L: ?*LuaState) callconv(.c) c_int {
+    const state = L orelse return 0;
+    const name = readLuaString(state, 1);
+    const rva_value = luaL_checkinteger(state, 2);
+    const requested = if (lua_gettop(state) >= 3) luaL_checkinteger(state, 3) else 16;
+    if (rva_value < 0 or requested <= 0 or requested > 64) {
+        lua_pushboolean(state, 0);
+        return 1;
+    }
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    const info = image.findByNameContains(name) orelse {
+        logger.writeDefault(allocator, .err, "image diagnose: image not found") catch {};
+        lua_pushboolean(state, 0);
+        return 1;
+    };
+    const address = info.base + @as(usize, @intCast(rva_value));
+    const len: usize = @intCast(requested);
+    const bytes: [*]const u8 = @ptrFromInt(address);
+
+    var byte_buf: [64 * 3]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&byte_buf);
+    for (bytes[0..len], 0..) |byte, index| {
+        if (index != 0) stream.writer().writeByte(' ') catch return 0;
+        stream.writer().print("{x:0>2}", .{byte}) catch return 0;
+    }
+    const byte_text = stream.getWritten();
+
+    const message = std.fmt.allocPrint(
+        allocator,
+        "image diagnose: image={s} index={d} base=0x{x} rva=0x{x} address=0x{x} bytes={s}",
+        .{ info.name, info.index, info.base, @as(usize, @intCast(rva_value)), address, byte_text },
+    ) catch {
+        lua_pushboolean(state, 0);
+        return 1;
+    };
+    defer allocator.free(message);
+    logger.writeDefault(allocator, .info, message) catch {};
+
+    lua_pushboolean(state, 1);
+    lua_pushinteger(state, @intCast(address));
+    lua_pushlstring(state, byte_text.ptr, byte_text.len);
+    return 3;
 }
 
 fn luaHookSelfTest(L: ?*LuaState) callconv(.c) c_int {

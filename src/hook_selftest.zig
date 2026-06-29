@@ -111,9 +111,9 @@ pub fn run(allocator: std.mem.Allocator, root: []const u8) !void {
     try log.write(.info, "hook selftest: start");
 
     if (isApple()) {
-        try log.write(.info, "hook selftest: running Apple no-trampoline probe");
-        try runAppleProbe(allocator, &log);
-        try log.write(.info, "hook selftest: Apple no-trampoline probe passed");
+        try log.write(.warn, "hook selftest: Apple self-hook is skipped because LiveContainer can crash when patching the injected dylib text page");
+        try log.write(.info, "hook selftest: use Toolkit.Image.DiagnoseRva(imageName, rva, length) to verify game image address resolution");
+        return;
     }
 
     const before = ftk_selftest_target_add(10, 20);
