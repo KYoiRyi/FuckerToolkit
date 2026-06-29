@@ -10,8 +10,6 @@ pub const Options = extern struct {
 };
 
 pub fn runOnce(allocator: std.mem.Allocator, options: Options) !void {
-    _ = options;
-
     const root = try pal.privateRoot(allocator);
     defer allocator.free(root);
 
