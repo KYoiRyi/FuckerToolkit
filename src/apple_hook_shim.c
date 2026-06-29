@@ -1,8 +1,12 @@
 #include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <dlfcn.h>
+#include <mach-o/dyld.h>
+#include <mach-o/loader.h>
+#include <mach-o/nlist.h>
 #include <dobby.h>
 
 enum {
@@ -33,6 +37,8 @@ static void *g_symbol_smoke_target = NULL;
 static void *g_symbol_smoke_original = NULL;
 static const char *g_symbol_smoke_name = "";
 static char g_symbol_smoke_bytes[64] = "";
+static int g_symbol_diagnose_count = 0;
+static char g_symbol_diagnose_names[768] = "";
 
 typedef void *(*ftk_il2cpp_domain_get_fn_t)(void);
 typedef void **(*ftk_il2cpp_domain_get_assemblies_fn_t)(const void *, size_t *);
@@ -43,6 +49,7 @@ typedef const char *(*ftk_il2cpp_class_get_name_fn_t)(const void *);
 typedef const char *(*ftk_il2cpp_class_get_namespace_fn_t)(const void *);
 typedef void *(*ftk_il2cpp_class_get_methods_fn_t)(void *, void **);
 typedef const char *(*ftk_il2cpp_method_get_name_fn_t)(const void *);
+typedef void (*ftk_unity_send_message_fn_t)(const char *, const char *, const char *);
 
 static void *ftk_detour_il2cpp_domain_get(void) {
     g_symbol_smoke_called += 1;
@@ -107,6 +114,13 @@ static const char *ftk_detour_il2cpp_method_get_name(const void *method) {
     return original(method);
 }
 
+static void ftk_detour_unity_send_message(const char *object, const char *method, const char *message) {
+    g_symbol_smoke_called += 1;
+    ftk_unity_send_message_fn_t original = (ftk_unity_send_message_fn_t)g_symbol_smoke_original;
+    if (original == NULL) return;
+    original(object, method, message);
+}
+
 int ftk_apple_hook_last_attach_rc(void) {
     return g_last_attach_rc;
 }
@@ -155,6 +169,14 @@ const char *ftk_apple_hook_symbol_smoke_bytes(void) {
     return g_symbol_smoke_bytes;
 }
 
+int ftk_apple_image_symbol_diagnose_count(void) {
+    return g_symbol_diagnose_count;
+}
+
+const char *ftk_apple_image_symbol_diagnose_names(void) {
+    return g_symbol_diagnose_names;
+}
+
 static void ftk_capture_smoke_bytes(const void *addr) {
     const unsigned char *bytes = (const unsigned char *)addr;
     char *out = g_symbol_smoke_bytes;
@@ -175,6 +197,74 @@ static void *ftk_resolve_il2cpp_symbol(const char *symbol) {
     addr = DobbySymbolResolver(NULL, symbol);
     if (addr != NULL) return addr;
     return dlsym(RTLD_DEFAULT, symbol);
+}
+
+static const struct mach_header_64 *ftk_find_image_header(const char *image_substr, intptr_t *slide_out) {
+    if (image_substr == NULL) return NULL;
+
+    uint32_t count = _dyld_image_count();
+    for (uint32_t i = 0; i < count; ++i) {
+        const char *name = _dyld_get_image_name(i);
+        if (name == NULL || strstr(name, image_substr) == NULL) continue;
+
+        const struct mach_header *header = _dyld_get_image_header(i);
+        if (header == NULL || header->magic != MH_MAGIC_64) return NULL;
+        if (slide_out != NULL) *slide_out = _dyld_get_image_vmaddr_slide(i);
+        return (const struct mach_header_64 *)header;
+    }
+    return NULL;
+}
+
+int ftk_apple_image_symbol_diagnose(const char *image_substr, const char *needle) {
+    g_symbol_diagnose_count = 0;
+    g_symbol_diagnose_names[0] = '\0';
+    if (image_substr == NULL || needle == NULL) return 0;
+
+    intptr_t slide = 0;
+    const struct mach_header_64 *header = ftk_find_image_header(image_substr, &slide);
+    if (header == NULL) return 0;
+
+    const struct symtab_command *symtab = NULL;
+    const struct segment_command_64 *linkedit = NULL;
+    const uint8_t *cursor = (const uint8_t *)(header + 1);
+    for (uint32_t i = 0; i < header->ncmds; ++i) {
+        const struct load_command *cmd = (const struct load_command *)cursor;
+        if (cmd->cmd == LC_SYMTAB) {
+            symtab = (const struct symtab_command *)cmd;
+        } else if (cmd->cmd == LC_SEGMENT_64) {
+            const struct segment_command_64 *segment = (const struct segment_command_64 *)cmd;
+            if (strcmp(segment->segname, SEG_LINKEDIT) == 0) {
+                linkedit = segment;
+            }
+        }
+        cursor += cmd->cmdsize;
+    }
+    if (symtab == NULL || linkedit == NULL) return 0;
+
+    uintptr_t linkedit_base = (uintptr_t)slide + (uintptr_t)linkedit->vmaddr - (uintptr_t)linkedit->fileoff;
+    const struct nlist_64 *symbols = (const struct nlist_64 *)(linkedit_base + symtab->symoff);
+    const char *strings = (const char *)(linkedit_base + symtab->stroff);
+
+    char *out = g_symbol_diagnose_names;
+    size_t left = sizeof(g_symbol_diagnose_names);
+    for (uint32_t i = 0; i < symtab->nsyms; ++i) {
+        uint32_t strx = symbols[i].n_un.n_strx;
+        if (strx == 0) continue;
+        const char *name = strings + strx;
+        if (strstr(name, needle) == NULL) continue;
+
+        g_symbol_diagnose_count += 1;
+        if (left <= 1) continue;
+        int written = snprintf(out, left, g_symbol_diagnose_count == 1 ? "%s" : ",%s", name);
+        if (written <= 0 || (size_t)written >= left) {
+            left = 0;
+            continue;
+        }
+        out += written;
+        left -= (size_t)written;
+    }
+
+    return g_symbol_diagnose_count;
 }
 
 typedef struct {
@@ -219,6 +309,31 @@ static int ftk_apple_hook_il2cpp_reflection_smoke(void) {
     return FTK_HOOK_INVALID_TARGET;
 }
 
+static int ftk_apple_hook_unity_api_smoke(void) {
+    const char *symbol = "UnitySendMessage";
+    void *addr = DobbySymbolResolver("UnityFramework", symbol);
+    if (addr == NULL) {
+        addr = DobbySymbolResolver(NULL, symbol);
+    }
+    if (addr == NULL) {
+        return FTK_HOOK_INVALID_TARGET;
+    }
+
+    g_symbol_smoke_name = symbol;
+    g_symbol_smoke_target = addr;
+    g_symbol_smoke_before = 1;
+    ftk_capture_smoke_bytes(addr);
+
+    g_last_stage = 900;
+    int rc = DobbyHook(addr, (void *)ftk_detour_unity_send_message, &g_symbol_smoke_original);
+    g_last_stage = 901;
+    g_symbol_smoke_rc = rc;
+    if (rc != 0) return FTK_HOOK_BACKEND_ERROR;
+
+    g_symbol_smoke_after = 1;
+    return FTK_HOOK_OK;
+}
+
 int ftk_apple_hook_symbol_smoke_test(const char *symbol) {
     if (symbol == NULL) return FTK_HOOK_INVALID_TARGET;
 
@@ -234,6 +349,9 @@ int ftk_apple_hook_symbol_smoke_test(const char *symbol) {
 
     if (strcmp(symbol, "il2cpp_reflection") == 0) {
         return ftk_apple_hook_il2cpp_reflection_smoke();
+    }
+    if (strcmp(symbol, "unity_api") == 0) {
+        return ftk_apple_hook_unity_api_smoke();
     }
 
     return FTK_HOOK_INVALID_TARGET;

@@ -120,4 +120,7 @@ available basic IL2CPP reflection export from a conservative candidate list
 helpers). The detour only increments a counter and forwards to the original
 implementation. The smoke test does not invoke the target after attaching; it
 logs the selected symbol, address, original trampoline, Dobby return code, stage,
-and the first 16 bytes at the target entry.
+and the first 16 bytes at the target entry. If the target app strips or hides
+all `il2cpp_*` exports, the smoke test logs a Mach-O symbol diagnostic and falls
+back to a forwarded `UnitySendMessage` hook to verify that the Dobby backend can
+patch the current UnityFramework image.

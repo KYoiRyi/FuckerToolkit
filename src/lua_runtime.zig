@@ -300,6 +300,9 @@ extern fn ftk_apple_hook_symbol_smoke_original() callconv(.c) ?*anyopaque;
 extern fn ftk_apple_hook_symbol_smoke_name() callconv(.c) ?[*:0]const u8;
 extern fn ftk_apple_hook_symbol_smoke_bytes() callconv(.c) ?[*:0]const u8;
 extern fn ftk_apple_hook_last_stage() callconv(.c) c_int;
+extern fn ftk_apple_image_symbol_diagnose(image_substr: [*:0]const u8, needle: [*:0]const u8) callconv(.c) c_int;
+extern fn ftk_apple_image_symbol_diagnose_count() callconv(.c) c_int;
+extern fn ftk_apple_image_symbol_diagnose_names() callconv(.c) ?[*:0]const u8;
 
 fn statusName(status: hook.Status) []const u8 {
     return switch (status) {
@@ -341,6 +344,49 @@ fn logImageIfPresent(allocator: std.mem.Allocator, name: []const u8) void {
     logger.writeDefault(allocator, .info, message) catch {};
 }
 
+fn logAppleSymbolDiagnose(allocator: std.mem.Allocator) void {
+    _ = ftk_apple_image_symbol_diagnose("UnityFramework", "il2cpp");
+    const names_ptr = ftk_apple_image_symbol_diagnose_names();
+    const names = if (names_ptr) |ptr| std.mem.span(ptr) else "";
+    const message = std.fmt.allocPrint(
+        allocator,
+        "auto smoke: UnityFramework symbol diagnose needle=il2cpp count={d} names={s}",
+        .{ ftk_apple_image_symbol_diagnose_count(), names },
+    ) catch return;
+    defer allocator.free(message);
+    logger.writeDefault(allocator, .info, message) catch {};
+}
+
+fn runAppleSymbolSmoke(allocator: std.mem.Allocator, symbol: [*:0]const u8, label: []const u8) hook.Status {
+    const status = statusFromInt(ftk_apple_hook_symbol_smoke_test(symbol));
+    const target = ftk_apple_hook_symbol_smoke_target();
+    const original = ftk_apple_hook_symbol_smoke_original();
+    const name_ptr = ftk_apple_hook_symbol_smoke_name();
+    const name = if (name_ptr) |ptr| std.mem.span(ptr) else "unknown";
+    const bytes_ptr = ftk_apple_hook_symbol_smoke_bytes();
+    const bytes = if (bytes_ptr) |ptr| std.mem.span(ptr) else "";
+    const message = std.fmt.allocPrint(
+        allocator,
+        "auto smoke: target={s} symbol={s} status={s} rc={d} stage={d} address=0x{x} original=0x{x} before={d} after={d} called={d} bytes={s}",
+        .{
+            label,
+            name,
+            statusName(status),
+            ftk_apple_hook_symbol_smoke_rc(),
+            ftk_apple_hook_last_stage(),
+            if (target) |ptr| @intFromPtr(ptr) else 0,
+            if (original) |ptr| @intFromPtr(ptr) else 0,
+            ftk_apple_hook_symbol_smoke_before(),
+            ftk_apple_hook_symbol_smoke_after(),
+            ftk_apple_hook_symbol_smoke_called(),
+            bytes,
+        },
+    ) catch return .backend_error;
+    defer allocator.free(message);
+    logger.writeDefault(allocator, if (status == .ok) .info else .err, message) catch {};
+    return status;
+}
+
 fn luaHookAutoSmokeTest(L: ?*LuaState) callconv(.c) c_int {
     const state = L orelse return 0;
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -358,34 +404,12 @@ fn luaHookAutoSmokeTest(L: ?*LuaState) callconv(.c) c_int {
     }
 
     logger.writeDefault(allocator, .info, "auto smoke: trying DobbyHook target=il2cpp reflection API") catch {};
-    const status = statusFromInt(ftk_apple_hook_symbol_smoke_test("il2cpp_reflection"));
-    const target = ftk_apple_hook_symbol_smoke_target();
-    const original = ftk_apple_hook_symbol_smoke_original();
-    const name_ptr = ftk_apple_hook_symbol_smoke_name();
-    const name = if (name_ptr) |ptr| std.mem.span(ptr) else "unknown";
-    const bytes_ptr = ftk_apple_hook_symbol_smoke_bytes();
-    const bytes = if (bytes_ptr) |ptr| std.mem.span(ptr) else "";
-    const message = std.fmt.allocPrint(
-        allocator,
-        "auto smoke: target=il2cpp symbol={s} status={s} rc={d} stage={d} address=0x{x} original=0x{x} before={d} after={d} called={d} bytes={s}",
-        .{
-            name,
-            statusName(status),
-            ftk_apple_hook_symbol_smoke_rc(),
-            ftk_apple_hook_last_stage(),
-            if (target) |ptr| @intFromPtr(ptr) else 0,
-            if (original) |ptr| @intFromPtr(ptr) else 0,
-            ftk_apple_hook_symbol_smoke_before(),
-            ftk_apple_hook_symbol_smoke_after(),
-            ftk_apple_hook_symbol_smoke_called(),
-            bytes,
-        },
-    ) catch {
-        lua_pushboolean(state, 0);
-        return 1;
-    };
-    defer allocator.free(message);
-    logger.writeDefault(allocator, if (status == .ok) .info else .err, message) catch {};
+    logAppleSymbolDiagnose(allocator);
+    var status = runAppleSymbolSmoke(allocator, "il2cpp_reflection", "il2cpp");
+    if (status == .invalid_target) {
+        logger.writeDefault(allocator, .warn, "auto smoke: no exported IL2CPP reflection API found; trying UnityFramework API fallback") catch {};
+        status = runAppleSymbolSmoke(allocator, "unity_api", "unity_api");
+    }
     logger.writeDefault(allocator, .info, "auto smoke: end") catch {};
 
     lua_pushboolean(state, if (status == .ok) 1 else 0);
